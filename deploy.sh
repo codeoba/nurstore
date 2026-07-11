@@ -52,7 +52,7 @@ echo "✅ .env imesanidiwa"
 # ─── Install Dependencies ─────────────────────────────────────
 echo ""
 echo "📦 Kuinstall dependencies..."
-npm ci --production
+npm install --omit=dev
 echo "✅ Dependencies zimewekwa"
 
 # ─── Create Directories ───────────────────────────────────────
