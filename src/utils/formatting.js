@@ -2,18 +2,6 @@
 
 const config = require('../config')
 
-// ─── Stars <-> TZS Conversion ───────────────────────────────
-
-/**
- * Badilisha Stars kuwa TZS kwa display
- * @param {number} stars
- * @returns {string} e.g. "3,200 TZS"
- */
-function starsToTzs(stars) {
-  const tzs = stars * config.currency.tzsSPerStar
-  return formatTzs(tzs)
-}
-
 /**
  * Format TZS na comma separators
  * @param {number} amount
@@ -35,9 +23,9 @@ function formatProductCard(product, lang = 'sw') {
   const name = lang === 'en' && product.nameEn ? product.nameEn : product.name
   const desc = lang === 'en' && product.descriptionEn ? product.descriptionEn : product.description
 
-  // Bei halisi (angalia discount)
   const activeDiscount = isDiscountActive(product)
-  const stars = activeDiscount ? product.discountStars : product.priceStars
+  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
+  const usd = activeDiscount ? product.discountUsd : product.priceUsd
 
   let text = `*${escapeMarkdown(name)}*\n\n`
   text += `${escapeMarkdown(desc)}\n\n`
@@ -53,10 +41,17 @@ function formatProductCard(product, lang = 'sw') {
 
   // Bei
   if (activeDiscount) {
-    text += `💰 *Bei:* ~~⭐ ${product.priceStars}~~ ⭐ *${stars}* \\(${starsToTzs(stars)}\\)\n`
-    text += `🔥 *Punguzo!*\n`
+    text += `💰 *Bei:* ~~TZS ${product.priceTzs.toLocaleString('en-US')}~~ TZS *${tzs.toLocaleString('en-US')}*`
+    if (usd) {
+      text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+    }
+    text += `\n🔥 *Punguzo\\!*\n`
   } else {
-    text += `💰 *Bei:* ⭐ *${stars}* \\(${starsToTzs(stars)}\\)\n`
+    text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
+    if (usd) {
+      text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+    }
+    text += `\n`
   }
 
   // Aina ya bidhaa
@@ -101,9 +96,15 @@ function formatTextProductPreview(product, lang = 'sw') {
     text += '\n'
   }
 
-  const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-  text += `\n💰 *Bei:* ⭐ *${stars}* \\(${starsToTzs(stars)}\\)\n`
-  text += `\n🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
+  const activeDiscount = isDiscountActive(product)
+  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
+  const usd = activeDiscount ? product.discountUsd : product.priceUsd
+
+  text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
+  if (usd) {
+    text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+  }
+  text += `\n\n🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
 
   return text
 }
@@ -139,7 +140,7 @@ function formatOrderSummary(order, lang = 'sw') {
   let text = `📋 *Order \\#${order.id}*\n`
   text += `📅 ${escapeMarkdown(date)}\n`
   text += `📦 ${items} ${lang === 'sw' ? 'bidhaa' : 'item(s)'}\n`
-  text += `💫 ⭐ ${order.totalStars} ${lang === 'sw' ? 'Stars' : 'Stars'}\n`
+  text += `💰 TZS ${order.totalTzs.toLocaleString('en-US')}\n`
   text += `📊 ${status}\n`
 
   return text
@@ -159,17 +160,17 @@ function formatCartSummary(cartItems, lang = 'sw') {
     ? `🛒 *Kikapu Chako \\(${cartItems.length} bidhaa\\)*\n\n`
     : `🛒 *Your Cart \\(${cartItems.length} items\\)*\n\n`
 
-  let totalStars = 0
+  let totalTzs = 0
   for (const item of cartItems) {
     const product = item.product
-    const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-    totalStars += stars * item.quantity
+    const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+    totalTzs += price * item.quantity
 
     text += `• *${escapeMarkdown(product.name)}*\n`
-    text += `  ⭐ ${stars} × ${item.quantity} \\= ⭐ ${stars * item.quantity}\n`
+    text += `  TZS ${price.toLocaleString('en-US')} × ${item.quantity} \\= TZS ${(price * item.quantity).toLocaleString('en-US')}\n`
   }
 
-  text += `\n💰 *${lang === 'sw' ? 'Jumla' : 'Total'}:* ⭐ *${totalStars}* \\(${starsToTzs(totalStars)}\\)`
+  text += `\n💰 *${lang === 'sw' ? 'Jumla' : 'Total'}:* TZS *${totalTzs.toLocaleString('en-US')}*`
 
   return text
 }
@@ -192,7 +193,7 @@ function formatDate(date, lang = 'sw') {
  * Angalia kama discount ya bidhaa iko active sasa hivi
  */
 function isDiscountActive(product) {
-  if (!product.discountStars) return false
+  if (!product.discountTzs) return false
   const now = new Date()
   const start = product.discountStartsAt ? new Date(product.discountStartsAt) : null
   const end = product.discountEndsAt ? new Date(product.discountEndsAt) : null
@@ -202,47 +203,17 @@ function isDiscountActive(product) {
 }
 
 /**
- * Escape special characters kwa Telegram MarkdownV2
+ * Escape maalum herufi za MarkdownV2 za Telegram
+ * @param {string} text
+ * @returns {string}
  */
 function escapeMarkdown(text) {
   if (!text) return ''
-  return String(text).replace(/([_*\[\]()~`>#+=|{}.!\\-])/g, '\\$1')
-}
-
-/**
- * Punguza maandishi kama ni marefu sana
- */
-function truncate(text, maxLength = 100) {
-  if (!text) return ''
-  return text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text
-}
-
-/**
- * Format nambari nzuri ya pagination
- */
-function formatPagination(page, totalPages, lang = 'sw') {
-  return lang === 'sw'
-    ? `📄 Ukurasa ${page} kati ya ${totalPages}`
-    : `📄 Page ${page} of ${totalPages}`
-}
-
-/**
- * Stars display yenye emoji
- */
-function starsDisplay(amount) {
-  return `⭐ ${amount}`
-}
-
-/**
- * Format rating kwa nyota
- */
-function formatRating(rating) {
-  const stars = '⭐'.repeat(rating) + '☆'.repeat(5 - rating)
-  return stars
+  // _ * [ ] ( ) ~ ` > # + - = | { } . !
+  return String(text).replace(/([_*\[\]\(\)~`#\+\-\=|\{\}\.!])/g, '\\$1')
 }
 
 module.exports = {
-  starsToTzs,
   formatTzs,
   formatProductCard,
   formatProductType,
@@ -253,8 +224,4 @@ module.exports = {
   formatDate,
   isDiscountActive,
   escapeMarkdown,
-  truncate,
-  formatPagination,
-  starsDisplay,
-  formatRating,
 }

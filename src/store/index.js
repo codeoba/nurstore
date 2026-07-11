@@ -91,6 +91,9 @@ function registerStoreRouter(bot) {
 
   const { registerSupportHandlers } = require('./support')
   registerSupportHandlers(bot)
+
+  const { registerWalletHandlers } = require('./wallet')
+  registerWalletHandlers(bot)
 }
 
 // ─── Main Menu Display ────────────────────────────────────────
@@ -187,13 +190,13 @@ async function showProfile(ctx) {
         ``,
         `📊 *Takwimu Zangu:*`,
         `🛍️ Ununuzi: ${paidOrders}`,
-        `⭐ Stars za Referral: ${user.starsEarned}`,
+        `💰 Komisheni ya Referral: TZS ${user.commissionEarned.toLocaleString('en-US')}`,
         `👥 Walioalikwa: ${user._count.referred}`,
         ``,
         `🔗 *Link Yangu ya Referral:*`,
         `\`https://t\\.me/${botUsername}?start=ref_${user.referralCode}\``,
         ``,
-        `_Shiriki link hii\\. Kila mtu anayenunua kupitia link yako, utapata ⭐${config.referral.commissionStars} Stars\\!_`,
+        `_Shiriki link hii\\. Kila mtu anayenunua kupitia link yako, utapata TZS ${config.referral.commissionTzs.toLocaleString('en-US')} kwenye wallet yako\\!_`,
       ].join('\n')
     : [
         `👤 *My Profile*`,
@@ -203,17 +206,22 @@ async function showProfile(ctx) {
         ``,
         `📊 *My Stats:*`,
         `🛍️ Purchases: ${paidOrders}`,
-        `⭐ Referral Stars: ${user.starsEarned}`,
+        `💰 Referral Commission: TZS ${user.commissionEarned.toLocaleString('en-US')}`,
         `👥 Referred Users: ${user._count.referred}`,
         ``,
         `🔗 *My Referral Link:*`,
         `\`https://t\\.me/${botUsername}?start=ref_${user.referralCode}\``,
         ``,
-        `_Share this link\\. Every purchase earns you ⭐${config.referral.commissionStars} Stars\\!_`,
+        `_Share this link\\. Every purchase earns you TZS ${config.referral.commissionTzs.toLocaleString('en-US')} in your wallet\\!_`,
       ].join('\n')
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back to Menu', 'store:menu')],
+    [
+      Markup.button.callback(lang === 'sw' ? '💳 Wallet Yangu' : '💳 My Wallet', 'store:wallet'),
+    ],
+    [
+      Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back to Menu', 'store:menu')
+    ],
   ])
 
   if (ctx.callbackQuery) {

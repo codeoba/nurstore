@@ -2,15 +2,16 @@
 
 const { Markup } = require('telegraf')
 const { prisma } = require('../database')
-const { escapeMarkdown, formatCartSummary, isDiscountActive, starsToTzs } = require('../utils/formatting')
-const { getUserCart, calculateCartTotal, createOrderFromCart, createDirectOrder } = require('../services/orderService')
+const { escapeMarkdown, isDiscountActive } = require('../utils/formatting')
+const { getUserCart, calculateCartTotal, createOrderFromCart, createDirectOrder, payOrderWithWallet } = require('../services/orderService')
+const { getOrCreateWallet } = require('../services/walletService')
 const { validateCoupon } = require('../services/referralService')
-const { createInvoicePayload, buildInvoice, buildCartInvoice } = require('../payments/telegramPayments')
+const { deliverOrder } = require('../services/deliveryService')
 const { checkoutRateLimit } = require('../middlewares/rateLimit')
 const logger = require('../utils/logger')
 
 function registerCheckoutHandlers(bot) {
-  // ─── Buy Now (Direct Purchase) ────────────────────────────────
+  // ─── Buy Now (Direct Purchase Initiator) ──────────────────────
   bot.action(/^store:buy:(\d+)$/, checkoutRateLimit, async (ctx) => {
     await ctx.answerCbQuery()
     const productId = parseInt(ctx.match[1])
@@ -46,7 +47,7 @@ function registerCheckoutHandlers(bot) {
     )
   })
 
-  // ─── Proceed to Pay (Cart) ────────────────────────────────────
+  // ─── Proceed to Pay (Cart Checkout) ───────────────────────────
   bot.action('store:checkout:pay', checkoutRateLimit, async (ctx) => {
     await ctx.answerCbQuery()
     const lang = ctx.session?.language || 'sw'
@@ -57,11 +58,11 @@ function registerCheckoutHandlers(bot) {
     const couponId = wizard?.data?.couponId || null
     const couponDiscount = wizard?.data?.couponDiscount || 0
 
-    await sendCartInvoice(ctx, user.id, couponId, couponDiscount, lang)
+    await processCartWalletCheckout(ctx, user.id, couponId, couponDiscount, lang)
     ctx.session.userWizard = null
   })
 
-  // ─── Direct Buy Confirm (with/without coupon) ─────────────────
+  // ─── Direct Buy Confirm (Wallet checkout for single product) ──
   bot.action(/^store:buy_confirm:(\d+)$/, checkoutRateLimit, async (ctx) => {
     await ctx.answerCbQuery()
     const productId = parseInt(ctx.match[1])
@@ -73,7 +74,7 @@ function registerCheckoutHandlers(bot) {
     const couponId = wizard?.data?.couponId || null
     const couponDiscount = wizard?.data?.couponDiscount || 0
 
-    await sendDirectInvoice(ctx, user.id, productId, couponId, couponDiscount, lang)
+    await processDirectWalletCheckout(ctx, user.id, productId, couponId, couponDiscount, lang)
     ctx.session.userWizard = null
   })
 
@@ -99,63 +100,12 @@ function registerCheckoutHandlers(bot) {
   })
 }
 
-// ─── Invoice Senders ──────────────────────────────────────────
+// ─── Checkout Processors ──────────────────────────────────────
 
 /**
- * Tuma invoice ya bidhaa moja
+ * Shughulikia ununuzi wa Cart kwa Wallet
  */
-async function sendDirectInvoice(ctx, userId, productId, couponId, couponDiscount, lang) {
-  const product = await prisma.product.findUnique({
-    where: { id: productId, isActive: true },
-    select: {
-      id: true, name: true, description: true,
-      priceStars: true, discountStars: true, discountStartsAt: true, discountEndsAt: true,
-      thumbnailFileId: true, productType: true, stock: true,
-    },
-  })
-
-  if (!product) {
-    await ctx.reply(lang === 'sw' ? '❌ Bidhaa haipatikani.' : '❌ Product not available.')
-    return
-  }
-
-  // Angalia stock
-  if (product.stock !== null && product.stock < 1) {
-    await ctx.reply(lang === 'sw' ? '❌ Bidhaa hii imekwisha stock.' : '❌ This product is out of stock.')
-    return
-  }
-
-  try {
-    // Unda order kwanza
-    const order = await createDirectOrder(userId, productId, couponId, couponDiscount)
-
-    const payload = createInvoicePayload(order.id, ctx.from.id)
-    const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-    const finalStars = Math.max(stars - couponDiscount, 1)
-
-    // Tuma invoice
-    await ctx.replyWithInvoice({
-      title: product.name.substring(0, 32),
-      description: (product.description || '').substring(0, 255),
-      payload,
-      currency: 'XTR',
-      prices: [{ label: product.name.substring(0, 32), amount: finalStars }],
-      ...(couponDiscount > 0 && {
-        // Telegram haioneshi discount lines kwa Stars, tumia description
-      }),
-    })
-
-    logger.info('Direct invoice sent', { orderId: order.id, userId, productId, stars: finalStars })
-  } catch (err) {
-    logger.error('Failed to send direct invoice', { error: err.message })
-    await ctx.reply(lang === 'sw' ? '❌ Hitilafu. Jaribu tena.' : '❌ Error. Please try again.')
-  }
-}
-
-/**
- * Tuma invoice ya cart (bidhaa nyingi)
- */
-async function sendCartInvoice(ctx, userId, couponId, couponDiscount, lang) {
+async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, lang) {
   const cartItems = await getUserCart(userId)
 
   if (cartItems.length === 0) {
@@ -163,58 +113,176 @@ async function sendCartInvoice(ctx, userId, couponId, couponDiscount, lang) {
     return
   }
 
+  const wallet = await getOrCreateWallet(userId)
+  const cartTotal = calculateCartTotal(cartItems)
+  const finalTotal = Math.max(cartTotal - couponDiscount, 100)
+
+  if (wallet.balance < finalTotal) {
+    const text = lang === 'sw'
+      ? `❌ *Salio Lako Halitoshi\\!*\n\n` +
+        `💸 Bei ya Order: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+        `💳 Salio la Wallet: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
+        `Tafadhali ongeza salio kwenye Wallet yako kwanza ili kukamilisha ununuzi\\.`
+      : `❌ *Insufficient Balance\\!*\n\n` +
+        `💸 Order Price: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+        `💳 Wallet Balance: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
+        `Please top up your Wallet first to complete this purchase\\.`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '➕ Weka Salio (Top Up)' : '➕ Top Up Balance', 'store:wallet:deposit_init')],
+      [Markup.button.callback(lang === 'sw' ? '🛒 Rudi kwenye Kikapu' : '🛒 Back to Cart', 'store:cart')],
+    ])
+
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+    return
+  }
+
+  // Mtumiaji ana salio la kutosha!
   try {
-    // Unda order
+    // 1. Unda order
     const order = await createOrderFromCart(userId, cartItems, couponId, couponDiscount)
 
-    const payload = createInvoicePayload(order.id, ctx.from.id)
+    // 2. Lipia order kwa wallet (hukata salio, husasisha stock na log)
+    const paidOrder = await payOrderWithWallet(userId, order.id)
 
-    // Unda prices array
-    const prices = cartItems.map(item => {
-      const product = item.product
-      const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-      return {
-        label: product.name.substring(0, 32),
-        amount: stars * item.quantity,
-      }
-    })
+    // 3. Tuma bidhaa mara moja
+    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
 
-    if (couponDiscount > 0) {
-      prices.push({ label: 'Coupon Discount', amount: -couponDiscount })
-    }
+    // 4. Futa cart
+    await prisma.cartItem.deleteMany({ where: { userId } }).catch(() => {})
 
-    const storeName = require('../config').bot.storeName
+    // Award commission ya referral (TZS)
+    await awardReferralCommission(userId, paidOrder.totalTzs).catch(() => {})
 
-    await ctx.replyWithInvoice({
-      title: `${storeName.substring(0, 25)} — Order`,
-      description: `Bidhaa ${cartItems.length}: ${cartItems.map(i => i.product.name).join(', ')}`.substring(0, 255),
-      payload,
-      currency: 'XTR',
-      prices,
-    })
-
-    logger.info('Cart invoice sent', {
-      orderId: order.id,
-      userId,
-      items: cartItems.length,
-      totalStars: order.totalStars,
-    })
-  } catch (err) {
-    logger.error('Failed to send cart invoice', { error: err.message })
     await ctx.reply(
       lang === 'sw'
-        ? `❌ Hitilafu: ${err.message}`
-        : `❌ Error: ${err.message}`
+        ? `🎉 *Ununuzi Umekamilika\\!*\n\n` +
+          `Kiasi kilichokatwa: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+          `Bidhaa zako zimetumwa moja kwa moja kwenye chat hii\\. Asante kwa kufanya biashara nasi\\!`
+        : `🎉 *Purchase Completed\\!*\n\n` +
+          `Amount deducted: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+          `Your items have been delivered directly in this chat\\. Thank you for shopping with us\\!`,
+      {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+      }
     )
+  } catch (err) {
+    logger.error('Wallet cart checkout failed', { error: err.message, userId })
+    await ctx.reply(lang === 'sw' ? `❌ Hitilafu ya kiufundi: ${err.message}` : `❌ Transaction failed: ${err.message}`)
   }
+}
+
+/**
+ * Shughulikia ununuzi wa bidhaa moja (Buy Now) kwa Wallet
+ */
+async function processDirectWalletCheckout(ctx, userId, productId, couponId, couponDiscount, lang) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId, isActive: true },
+  })
+
+  if (!product) {
+    await ctx.reply(lang === 'sw' ? '❌ Bidhaa haipatikani.' : '❌ Product not available.')
+    return
+  }
+
+  if (product.stock !== null && product.stock < 1) {
+    await ctx.reply(lang === 'sw' ? '❌ Bidhaa hii imekwisha stock.' : '❌ Out of stock.')
+    return
+  }
+
+  const wallet = await getOrCreateWallet(userId)
+  const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  const finalTotal = Math.max(price - couponDiscount, 100)
+
+  if (wallet.balance < finalTotal) {
+    const text = lang === 'sw'
+      ? `❌ *Salio Lako Halitoshi\\!*\n\n` +
+        `💸 Bei ya Bidhaa: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+        `💳 Salio la Wallet: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
+        `Tafadhali ongeza salio kwenye Wallet yako kwanza ili kununua bidhaa hii\\.`
+      : `❌ *Insufficient Balance\\!*\n\n` +
+        `💸 Product Price: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+        `💳 Wallet Balance: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
+        `Please top up your Wallet first to buy this product\\.`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '➕ Weka Salio (Top Up)' : '➕ Top Up Balance', 'store:wallet:deposit_init')],
+      [Markup.button.callback(lang === 'sw' ? '◀️ Rudi kwenye Bidhaa' : '◀️ Back to Product', `store:product:${productId}`)],
+    ])
+
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+    return
+  }
+
+  // Mtumiaji ana hela
+  try {
+    // 1. Unda order
+    const order = await createDirectOrder(userId, productId, couponId, couponDiscount)
+
+    // 2. Lipia order kwa wallet
+    const paidOrder = await payOrderWithWallet(userId, order.id)
+
+    // 3. Tuma bidhaa mara moja
+    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
+
+    // Award commission ya referral (TZS)
+    await awardReferralCommission(userId, paidOrder.totalTzs).catch(() => {})
+
+    await ctx.reply(
+      lang === 'sw'
+        ? `🎉 *Ununuzi Umekamilika\\!*\n\n` +
+          `Bidhaa: *${escapeMarkdown(product.name)}*\n` +
+          `Kiasi kilichokatwa: *TZS ${finalTotal.toLocaleString('en-US')}*\n\n` +
+          `Bidhaa yako imetumwa moja kwa moja kwenye chat hii\\.`
+        : `🎉 *Purchase Completed\\!*\n\n` +
+          `Product: *${escapeMarkdown(product.name)}*\n` +
+          `Amount deducted: *TZS ${finalTotal.toLocaleString('en-US')}*\n\n` +
+          `Your product has been delivered directly in this chat\\.`,
+      {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+      }
+    )
+  } catch (err) {
+    logger.error('Wallet direct checkout failed', { error: err.message, userId, productId })
+    await ctx.reply(lang === 'sw' ? `❌ Hitilafu ya kiufundi: ${err.message}` : `❌ Transaction failed: ${err.message}`)
+  }
+}
+
+// ─── Direct Buy Flow Initiator ────────────────────────────────
+
+async function initDirectCheckout(ctx, userId, productId, lang) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId, isActive: true },
+  })
+
+  if (!product) {
+    await ctx.reply(lang === 'sw' ? '❌ Bidhaa haipatikani.' : '❌ Product not available.')
+    return
+  }
+
+  const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId } }
+
+  const text = lang === 'sw'
+    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\n💫 Bei: *TZS ${price.toLocaleString('en-US')}*\n\nJe, unataka kuendelea kulipia kupitia salio la Wallet yako?`
+    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\n💫 Price: *TZS ${price.toLocaleString('en-US')}*\n\nDo you want to proceed with paying from your Wallet balance?`
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard([
+      [
+        Markup.button.callback(lang === 'sw' ? '🎟️ Tumia Coupon' : '🎟️ Use Coupon', `store:buy:coupon:${productId}`),
+        Markup.button.callback(lang === 'sw' ? '⚡ Thibitisha Ununuzi' : '⚡ Confirm Purchase', `store:buy_confirm:${productId}`),
+      ],
+      [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)],
+    ]),
+  })
 }
 
 // ─── Checkout Wizard Handler ──────────────────────────────────
 
-/**
- * Shughulikia coupon input kutoka mtumiaji
- * Inaitwa kwenye message handler ya kuu
- */
 async function handleCheckoutWizard(ctx) {
   const wizard = ctx.session?.userWizard
   if (!wizard) return false
@@ -229,23 +297,21 @@ async function handleCheckoutWizard(ctx) {
     return true
   }
 
-  // Pata total ya cart au bidhaa
-  let orderStars = 0
+  let orderTotalTzs = 0
   const user = await getDbUser(ctx.from.id)
   if (!user) return true
 
   if (wizard.scene === 'checkout') {
     const cartItems = await getUserCart(user.id)
-    orderStars = calculateCartTotal(cartItems)
+    orderTotalTzs = calculateCartTotal(cartItems)
   } else if (wizard.scene === 'directBuyCoupon') {
     const product = await prisma.product.findUnique({
       where: { id: wizard.data.productId },
-      select: { priceStars: true, discountStars: true, discountStartsAt: true, discountEndsAt: true },
     })
-    orderStars = isDiscountActive(product) ? product.discountStars : product.priceStars
+    orderTotalTzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
   }
 
-  const couponResult = await validateCoupon(code, orderStars)
+  const couponResult = await validateCoupon(code, orderTotalTzs)
 
   if (!couponResult.valid) {
     await ctx.reply(
@@ -265,8 +331,12 @@ async function handleCheckoutWizard(ctx) {
   wizard.data.couponDiscount = couponResult.discount
 
   const successMsg = lang === 'sw'
-    ? `✅ *Coupon \`${code}\` Imetumika\\!*\n\nPunguzo: ⭐ ${couponResult.discount}\nJumla mpya: ⭐ ${Math.max(orderStars - couponResult.discount, 1)}`
-    : `✅ *Coupon \`${code}\` Applied\\!*\n\nDiscount: ⭐ ${couponResult.discount}\nNew Total: ⭐ ${Math.max(orderStars - couponResult.discount, 1)}`
+    ? `✅ *Coupon \`${code}\` Imetumika\\!*` +
+      `\nPunguzo: *TZS ${couponResult.discount.toLocaleString('en-US')}*` +
+      `\nJumla mpya: *TZS ${Math.max(orderTotalTzs - couponResult.discount, 100).toLocaleString('en-US')}*`
+    : `✅ *Coupon \`${code}\` Applied\\!*` +
+      `\nDiscount: *TZS ${couponResult.discount.toLocaleString('en-US')}*` +
+      `\nNew Total: *TZS ${Math.max(orderTotalTzs - couponResult.discount, 100).toLocaleString('en-US')}*`
 
   wizard.step = 'coupon_confirmed'
 
@@ -274,48 +344,13 @@ async function handleCheckoutWizard(ctx) {
     parse_mode: 'MarkdownV2',
     ...Markup.inlineKeyboard([[
       Markup.button.callback(
-        lang === 'sw' ? '⚡ Endelea Kulipa' : '⚡ Proceed to Pay',
+        lang === 'sw' ? '⚡ Endelea Kulipia' : '⚡ Proceed to Pay',
         wizard.scene === 'checkout' ? 'store:checkout:pay' : `store:buy_confirm:${wizard.data.productId}`
       ),
     ]]),
   })
 
   return true
-}
-
-// ─── Init Direct Checkout ─────────────────────────────────────
-
-async function initDirectCheckout(ctx, userId, productId, lang) {
-  const product = await prisma.product.findUnique({
-    where: { id: productId, isActive: true },
-    select: {
-      id: true, name: true, priceStars: true, discountStars: true,
-      discountStartsAt: true, discountEndsAt: true, stock: true, productType: true,
-    },
-  })
-
-  if (!product) {
-    await ctx.reply(lang === 'sw' ? '❌ Bidhaa haipatikani.' : '❌ Product not available.')
-    return
-  }
-
-  const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-  ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId } }
-
-  const text = lang === 'sw'
-    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\n💫 Bei: ⭐ *${stars}* \\(${starsToTzs(stars)}\\)\n\nTaka kuendelea?`
-    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\n💫 Price: ⭐ *${stars}* \\(${starsToTzs(stars)}\\)\n\nProceed?`
-
-  await ctx.editMessageText(text, {
-    parse_mode: 'MarkdownV2',
-    ...Markup.inlineKeyboard([
-      [
-        Markup.button.callback(lang === 'sw' ? '🎟️ Tumia Coupon' : '🎟️ Use Coupon', `store:buy:coupon:${productId}`),
-        Markup.button.callback(lang === 'sw' ? '⚡ Lipia ⭐' + stars : '⚡ Pay ⭐' + stars, `store:buy_confirm:${productId}`),
-      ],
-      [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)],
-    ]),
-  })
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -330,6 +365,4 @@ async function getDbUser(telegramId) {
 module.exports = {
   registerCheckoutHandlers,
   handleCheckoutWizard,
-  sendDirectInvoice,
-  sendCartInvoice,
 }

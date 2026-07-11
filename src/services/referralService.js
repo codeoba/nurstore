@@ -1,6 +1,7 @@
 'use strict'
 
 const { prisma } = require('../database')
+const { creditWallet } = require('./walletService')
 const logger = require('../utils/logger')
 const config = require('../config')
 
@@ -56,24 +57,33 @@ async function processReferral(newUserTelegramId, referralCode) {
  * Inaitwa baada ya order kulipwa
  *
  * @param {number} buyerUserId - DB ID ya mnunuzi
- * @param {number} orderStars - Jumla ya stars za order
+ * @param {number} orderTzs - Jumla ya TZS za order
  */
-async function awardReferralCommission(buyerUserId, orderStars) {
+async function awardReferralCommission(buyerUserId, orderTzs) {
   try {
     const buyer = await prisma.user.findUnique({
       where: { id: buyerUserId },
       select: { referredBy: true },
     })
 
-    if (!buyer?.referredBy) return // Hajawahi kualikwa
+    if (!buyer?.referredBy) return 0 // Hajawahi kualikwa
 
-    const commission = config.referral.commissionStars
+    const commission = config.referral.commissionTzs || 2000
 
-    // Ongeza commission kwa mwasilishaji
+    // Ongeza commission kwa mwasilishaji kwenye database profile yake
     await prisma.user.update({
       where: { id: buyer.referredBy },
-      data: { starsEarned: { increment: commission } },
+      data: { commissionEarned: { increment: commission } },
     })
+
+    // Credit wallet ya mwasilishaji
+    await creditWallet(
+      buyer.referredBy,
+      commission,
+      'referral_commission',
+      'manual',
+      `REF_BUYER_${buyerUserId}`
+    )
 
     logger.info('Referral commission awarded', {
       referrerId: buyer.referredBy,
@@ -94,7 +104,7 @@ async function awardReferralCommission(buyerUserId, orderStars) {
 async function getReferralLink(telegramUserId, botUsername) {
   const user = await prisma.user.findUnique({
     where: { telegramId: BigInt(telegramUserId) },
-    select: { referralCode: true, starsEarned: true, _count: { select: { referred: true } } },
+    select: { referralCode: true, commissionEarned: true, _count: { select: { referred: true } } },
   })
 
   if (!user) return null
@@ -102,7 +112,7 @@ async function getReferralLink(telegramUserId, botUsername) {
   return {
     link: `https://t.me/${botUsername}?start=ref_${user.referralCode}`,
     code: user.referralCode,
-    starsEarned: user.starsEarned,
+    commissionEarned: user.commissionEarned,
     referredCount: user._count.referred,
   }
 }
@@ -113,10 +123,10 @@ async function getReferralLink(telegramUserId, botUsername) {
  * Validate na apply coupon code
  *
  * @param {string} code - Coupon code
- * @param {number} orderStars - Jumla ya stars kabla ya discount
+ * @param {number} orderTzs - Jumla ya TZS kabla ya discount
  * @returns {{ valid: boolean, discount: number, error?: string }}
  */
-async function validateCoupon(code, orderStars) {
+async function validateCoupon(code, orderTzs) {
   const coupon = await prisma.coupon.findUnique({
     where: { code: code.toUpperCase() },
   })
@@ -137,20 +147,20 @@ async function validateCoupon(code, orderStars) {
     return { valid: false, discount: 0, error: 'Coupon hii imekwisha muda wake' }
   }
 
-  if (coupon.minStars && orderStars < coupon.minStars) {
+  if (coupon.minTzs && orderTzs < coupon.minTzs) {
     return {
       valid: false,
       discount: 0,
-      error: `Coupon hii inahitaji order ya angalau ⭐ ${coupon.minStars}`,
+      error: `Coupon hii inahitaji order ya angalau TZS ${coupon.minTzs.toLocaleString('en-US')}`,
     }
   }
 
   // Hesabu discount
   let discount = 0
   if (coupon.discountType === 'percentage') {
-    discount = Math.floor((orderStars * coupon.discountValue) / 100)
+    discount = Math.floor((orderTzs * coupon.discountValue) / 100)
   } else {
-    discount = Math.min(coupon.discountValue, orderStars - 1) // Lazima ibaki angalau Star 1
+    discount = Math.min(coupon.discountValue, orderTzs - 100) // Lazima ibaki angalau TZS 100
   }
 
   return {
@@ -160,7 +170,7 @@ async function validateCoupon(code, orderStars) {
     coupon,
     description: coupon.discountType === 'percentage'
       ? `${coupon.discountValue}% punguzo`
-      : `⭐ ${discount} punguzo`,
+      : `TZS ${discount.toLocaleString('en-US')} punguzo`,
   }
 }
 
@@ -174,7 +184,7 @@ async function createCoupon(data) {
       discountType: data.discountType,
       discountValue: data.discountValue,
       usageLimit: data.usageLimit || null,
-      minStars: data.minStars || null,
+      minTzs: data.minTzs || null,
       expiresAt: data.expiresAt || null,
     },
   })

@@ -27,6 +27,7 @@ const { handleSearchQuery } = require('./store/browse')
 const { handleCheckoutWizard } = require('./store/checkout')
 const { handleReviewWizard } = require('./store/orders')
 const { handleSupportWizard, handleAdminTicketReply } = require('./store/support')
+const { handleWalletDepositWizard } = require('./store/wallet')
 
 // ─── Background Jobs ──────────────────────────────────────────
 const { startJobWorkers, scheduleRecurringJobs } = require('./jobs')
@@ -176,6 +177,12 @@ bot.on('message', async (ctx) => {
     // Support ticket
     if (userWizard.scene === 'support') {
       const handled = await handleSupportWizard(ctx)
+      if (handled) return
+    }
+
+    // Wallet deposit
+    if (userWizard.scene === 'wallet_deposit') {
+      const handled = await handleWalletDepositWizard(ctx)
       if (handled) return
     }
   }

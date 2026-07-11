@@ -240,11 +240,11 @@ async function showOrderDetail(ctx, orderId, lang = 'sw') {
   const status = formatOrderStatus(order.status, lang)
   const date = formatDate(order.createdAt, lang)
 
-  let text = lang === 'sw'
+  const text = lang === 'sw'
     ? [
         `📋 *Order \\#${order.id}*`,
         `📅 Tarehe: ${escapeMarkdown(date)}`,
-        `💫 Stars: ⭐ ${order.totalStars}`,
+        `💰 Kiasi: TZS ${order.totalTzs.toLocaleString('en-US')}`,
         `📊 Hali: ${status}`,
         ``,
         `📦 *Bidhaa Zako:*`,
@@ -252,7 +252,7 @@ async function showOrderDetail(ctx, orderId, lang = 'sw') {
     : [
         `📋 *Order \\#${order.id}*`,
         `📅 Date: ${escapeMarkdown(date)}`,
-        `💫 Stars: ⭐ ${order.totalStars}`,
+        `💰 Amount: TZS ${order.totalTzs.toLocaleString('en-US')}`,
         `📊 Status: ${status}`,
         ``,
         `📦 *Your Products:*`,

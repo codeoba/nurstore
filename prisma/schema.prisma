@@ -29,9 +29,9 @@ enum OrderStatus {
 }
 
 enum PaymentMethod {
-  telegram_stars
   telegram_provider
   manual
+  wallet
 }
 
 enum AdminRole {
@@ -41,7 +41,7 @@ enum AdminRole {
 
 enum DiscountType {
   percentage
-  fixed_stars
+  fixed_tzs
 }
 
 enum ContentFormat {
@@ -56,30 +56,74 @@ enum TicketStatus {
   closed
 }
 
+enum TransactionType {
+  deposit
+  purchase
+  refund
+  referral_commission
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  failed
+}
+
 // ─── Models ─────────────────────────────────────────────────
 
 model User {
-  id           Int      @id @default(autoincrement())
-  telegramId   BigInt   @unique @map("telegram_id")
-  username     String?
-  fullName     String?  @map("full_name")
-  language     String   @default("sw") // "sw" = Kiswahili, "en" = English
-  referralCode String   @unique @map("referral_code")
-  referredBy   Int?     @map("referred_by")
-  isBlocked    Boolean  @default(false) @map("is_blocked")
-  starsEarned  Int      @default(0) @map("stars_earned") // commission from referrals
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id               Int            @id @default(autoincrement())
+  telegramId       BigInt         @unique @map("telegram_id")
+  username         String?
+  fullName         String?        @map("full_name")
+  language         String         @default("sw") // "sw" = Kiswahili, "en" = English
+  referralCode     String         @unique @map("referral_code")
+  referredBy       Int?           @map("referred_by")
+  isBlocked        Boolean        @default(false) @map("is_blocked")
+  commissionEarned Int            @default(0) @map("commission_earned") // commission from referrals in TZS
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
-  referrer     User?          @relation("Referrals", fields: [referredBy], references: [id])
-  referred     User[]         @relation("Referrals")
-  orders       Order[]
-  reviews      Review[]
-  tickets      SupportTicket[]
-  cartItems    CartItem[]
-  wishlist     WishlistItem[]
+  referrer         User?          @relation("Referrals", fields: [referredBy], references: [id])
+  referred         User[]         @relation("Referrals")
+  orders           Order[]
+  reviews          Review[]
+  tickets          SupportTicket[]
+  cartItems        CartItem[]
+  wishlist         WishlistItem[]
+  wallet           Wallet?
 
   @@map("users")
+}
+
+model Wallet {
+  id           Int                 @id @default(autoincrement())
+  userId       Int                 @unique @map("user_id")
+  balance      Int                 @default(0) // Balance in TZS
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  user         User                @relation(fields: [userId], references: [id])
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id             Int               @id @default(autoincrement())
+  walletId       Int               @map("wallet_id")
+  amount         Int               // Positive for deposits, negative for purchases (in TZS)
+  type           TransactionType
+  status         TransactionStatus @default(pending)
+  gateway        String?           // "binance_pay", "telegram_provider", "manual"
+  referenceId    String?           @map("reference_id") // External charge/payment transaction ID
+  metadata       Json?             // Metadata payload
+  createdAt      DateTime          @default(now()) @map("created_at")
+  completedAt    DateTime?         @map("completed_at")
+
+  wallet         Wallet            @relation(fields: [walletId], references: [id])
+
+  @@map("wallet_transactions")
 }
 
 model Admin {
@@ -121,8 +165,8 @@ model Product {
   nameEn             String?       @map("name_en")
   description        String        @db.Text
   descriptionEn      String?       @db.Text @map("description_en")
-  price              Int           // display price in TZS
-  priceStars         Int           @map("price_stars") // actual charge in Telegram Stars
+  priceTzs           Int           @map("price_tzs") // Price in TZS
+  priceUsd           Float         @map("price_usd") // Price in USD
   categoryId         Int           @map("category_id")
   productType        ProductType   @default(file) @map("product_type")
 
@@ -151,7 +195,8 @@ model Product {
   isFeatured         Boolean       @default(false) @map("is_featured")
 
   // Discount
-  discountStars      Int?          @map("discount_stars")
+  discountTzs        Int?          @map("discount_tzs")
+  discountUsd        Float?        @map("discount_usd")
   discountStartsAt   DateTime?     @map("discount_starts_at")
   discountEndsAt     DateTime?     @map("discount_ends_at")
 
@@ -176,12 +221,12 @@ model Product {
 model Order {
   id               Int           @id @default(autoincrement())
   userId           Int           @map("user_id")
-  totalStars       Int           @map("total_stars")
+  totalTzs         Int           @map("total_tzs")
   status           OrderStatus   @default(pending)
-  paymentMethod    PaymentMethod @default(telegram_stars) @map("payment_method")
-  paymentReference String?       @map("payment_reference") // Telegram charge ID
+  paymentMethod    PaymentMethod @default(wallet) @map("payment_method")
+  paymentReference String?       @map("payment_reference") // External payment reference
   couponId         Int?          @map("coupon_id")
-  couponDiscount   Int?          @map("coupon_discount") // stars discounted
+  couponDiscount   Int?          @map("coupon_discount") // TZS discounted
   notes            String?
   isFlagged        Boolean       @default(false) @map("is_flagged") // fraud flag
   flagReason       String?       @map("flag_reason")
@@ -200,16 +245,16 @@ model Order {
 }
 
 model OrderItem {
-  id              Int     @id @default(autoincrement())
-  orderId         Int     @map("order_id")
-  productId       Int     @map("product_id")
-  starsAtPurchase Int     @map("stars_at_purchase")
-  priceAtPurchase Int     @map("price_at_purchase") // TZS display
-  quantity        Int     @default(1)
-  isDelivered     Boolean @default(false) @map("is_delivered")
+  id                 Int     @id @default(autoincrement())
+  orderId            Int     @map("order_id")
+  productId          Int     @map("product_id")
+  priceTzsAtPurchase Int     @map("price_tzs_at_purchase")
+  priceUsdAtPurchase Float   @map("price_usd_at_purchase")
+  quantity           Int     @default(1)
+  isDelivered        Boolean @default(false) @map("is_delivered")
 
-  order           Order   @relation(fields: [orderId], references: [id])
-  product         Product @relation(fields: [productId], references: [id])
+  order              Order   @relation(fields: [orderId], references: [id])
+  product            Product @relation(fields: [productId], references: [id])
 
   @@map("order_items")
 }
@@ -217,11 +262,11 @@ model OrderItem {
 model Payment {
   id               Int      @id @default(autoincrement())
   orderId          Int      @unique @map("order_id")
-  gateway          String   // "telegram_stars" | "telegram_provider" | "manual"
+  gateway          String   // "binance_pay" | "telegram_provider" | "manual"
   telegramChargeId String?  @map("telegram_charge_id")
   providerChargeId String?  @map("provider_charge_id")
-  amount           Int      // amount in stars
-  currency         String   @default("XTR")
+  amountTzs        Int      @map("amount_tzs") // amount in TZS
+  currency         String   @default("TZS")
   status           String   @default("pending") // pending|completed|failed|refunded
   rawResponse      Json?    @map("raw_response") // full Telegram payment object
   idempotencyKey   String?  @unique @map("idempotency_key") // prevent duplicate processing
@@ -236,10 +281,10 @@ model Coupon {
   id            Int          @id @default(autoincrement())
   code          String       @unique
   discountType  DiscountType @map("discount_type")
-  discountValue Int          @map("discount_value") // stars or percentage
+  discountValue Int          @map("discount_value") // TZS or percentage
   usageLimit    Int?         @map("usage_limit")    // null = unlimited
   usedCount     Int          @default(0) @map("used_count")
-  minStars      Int?         @map("min_stars")       // minimum order in stars
+  minTzs        Int?         @map("min_tzs")       // minimum order in TZS
   expiresAt     DateTime?    @map("expires_at")
   isActive      Boolean      @default(true) @map("is_active")
   createdAt     DateTime     @default(now()) @map("created_at")

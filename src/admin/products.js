@@ -274,29 +274,49 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'price': {
-      const stars = parseNumber(text)
-      if (!stars || stars < 1 || stars > 10000) {
-        await ctx.reply('⚠️ Bei lazima iwe kati ya Stars 1 na 10,000. Andika nambari tu, mfano: 100')
-        return true
+      const usdRate = config.currency.usdToTzsRate || 2600
+      let priceTzs, priceUsd
+
+      if (text.startsWith('$') || text.endsWith('$')) {
+        const clean = text.replace('$', '').trim()
+        const val = parseFloat(clean)
+        if (isNaN(val) || val <= 0) {
+          await ctx.reply('⚠️ Andika bei ya USD iliyo sahihi, mfano: $5')
+          return true
+        }
+        priceUsd = val
+        priceTzs = Math.round(priceUsd * usdRate)
+      } else {
+        const val = parseInt(text.replace(/,/g, '').trim(), 10)
+        if (isNaN(val) || val <= 0) {
+          await ctx.reply('⚠️ Andika bei sahihi ya TZS (mfano: 15000) au USD (mfano: $5):')
+          return true
+        }
+        priceTzs = val
+        priceUsd = Math.round((priceTzs / usdRate) * 100) / 100
       }
-      data.priceStars = stars
+
+      data.priceTzs = priceTzs
+      data.priceUsd = priceUsd
       wizard.step = data.productType === 'text_content' ? 'preview_desc' :
                     data.productType === 'subscription' ? 'sub_days' : 'file_upload'
 
+      const displayPrice = `TZS ${priceTzs.toLocaleString('en-US')} (approx. $${priceUsd.toFixed(2)})`
+
       if (data.productType === 'file') {
         await ctx.reply(
-          `✅ Bei: ⭐ ${stars}\n\n*Hatua 5/7:* Pakia *faili* la bidhaa \\(PDF, ZIP, n\\.k\\.\\):\n` +
+          `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Pakia *faili* la bidhaa \\(PDF, ZIP, n\\.k\\.\\):\n` +
           `_Ukubwa wa juu: ${config.storage.maxFileSizeMB}MB_`,
           { parse_mode: 'MarkdownV2' }
         )
       } else if (data.productType === 'text_content') {
         await ctx.reply(
-          `✅ Bei: ⭐ ${stars}\n\n*Hatua 5/7:* Andika *preview/teaser description* \\(inayoonekana kwa umma kabla ya kununua\\):`,
+          `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Andika *preview/teaser description* \\(inayoonekana kwa umma kabla ya kununua\\):`,
           { parse_mode: 'MarkdownV2' }
         )
       } else {
         await ctx.reply(
-          `✅ Bei: ⭐ ${stars}\n\n*Hatua 5/7:* Usajili huu unaisha baada ya siku ngapi? \\(mfano: 30 kwa mwezi\\)`,
+          `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Usajili huu unaisha baada ya siku ngapi? \\(mfano: 30 kwa mwezi\\)`,
           { parse_mode: 'MarkdownV2' }
         )
       }
@@ -455,7 +475,7 @@ function registerWizardCategoryCallback(bot) {
     wizard.step = 'price'
 
     await ctx.editMessageText(
-      `✅ Category imechaguliwa\\.\n\n*Hatua 4/7:* Andika *bei* ya bidhaa \\(kwa Telegram Stars\\):\n_Mfano: 50 kwa ⭐50_`,
+      `✅ Category imechaguliwa\\.\n\n*Hatua 4/7:* Andika *bei* ya bidhaa \\(mfano: \`15000\` kwa TZS au \`$5.99\` kwa USD\\):`,
       { parse_mode: 'MarkdownV2' }
     )
   })
@@ -472,7 +492,7 @@ async function showProductConfirmation(ctx, wizard) {
     ``,
     `📦 Jina: *${escapeMarkdown(d.name)}*`,
     `📝 Aina: ${typeIcons[d.productType]} ${d.productType}`,
-    `💫 Bei: ⭐ ${d.priceStars}`,
+    `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} (approx. $${d.priceUsd.toFixed(2)})`,
     `📊 Stock: ${d.stock === null ? 'Unlimited' : d.stock}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
     d.lockedContent ? `🔒 Maudhui ya siri: ${d.lockedContent.substring(0, 50)}...` : '',
@@ -500,7 +520,7 @@ async function saveProduct(ctx, wizard) {
       `✅ *Bidhaa imeundwa kwa mafanikio\\!*\n\n` +
       `📦 *${escapeMarkdown(product.name)}*\n` +
       `🆔 ID: ${product.id}\n` +
-      `💫 Bei: ⭐ ${product.priceStars}`,
+      `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${product.priceUsd.toFixed(2)}\\)`,
       { parse_mode: 'MarkdownV2', ...backToProductsKeyboard() }
     )
   } catch (err) {
@@ -515,23 +535,40 @@ async function handleDiscountStep(ctx, wizard, text) {
   const { step, data } = wizard
 
   if (step === 'stars') {
-    const stars = parseNumber(text)
-    if (stars === null || stars < 0) {
-      await ctx.reply('⚠️ Andika nambari ya Stars (0 kufuta punguzo):')
-      return true
+    const usdRate = config.currency.usdToTzsRate || 2600
+    let discountTzs, discountUsd
+
+    if (text.startsWith('$') || text.endsWith('$')) {
+      const clean = text.replace('$', '').trim()
+      const val = parseFloat(clean)
+      if (isNaN(val) || val <= 0) {
+        await ctx.reply('⚠️ Andika bei ya USD iliyo sahihi, mfano: $5')
+        return true
+      }
+      discountUsd = val
+      discountTzs = Math.round(discountUsd * usdRate)
+    } else {
+      const val = parseInt(text.replace(/,/g, '').trim(), 10)
+      if (isNaN(val) || val < 0) {
+        await ctx.reply('⚠️ Andika bei sahihi ya TZS (mfano: 15000) au USD (mfano: $5) au 0 kufuta punguzo:')
+        return true
+      }
+
+      if (val === 0) {
+        await setProductDiscount(data.productId, null, null, null, null)
+        ctx.session.adminWizard = null
+        await ctx.reply('✅ Punguzo limefutwa.', backToProductsKeyboard())
+        return true
+      }
+      discountTzs = val
+      discountUsd = Math.round((discountTzs / usdRate) * 100) / 100
     }
 
-    if (stars === 0) {
-      await setProductDiscount(data.productId, null, null, null)
-      ctx.session.adminWizard = null
-      await ctx.reply('✅ Punguzo limefutwa.', backToProductsKeyboard())
-      return true
-    }
-
-    data.discountStars = stars
+    data.discountTzs = discountTzs
+    data.discountUsd = discountUsd
     wizard.step = 'end_date'
     await ctx.reply(
-      `✅ Bei ya punguzo: ⭐ ${stars}\n\nPunguzo linaisha lini?\n_Format: YYYY-MM-DD (mfano: 2024-12-31)_\n_Au "forever" kwa punguzo la kudumu_`,
+      `✅ Bei ya punguzo: TZS ${discountTzs.toLocaleString('en-US')} (approx. $${discountUsd})\n\nPunguzo linaisha lini?\n_Format: YYYY-MM-DD (mfano: 2024-12-31)_\n_Au "forever" kwa punguzo la kudumu_`,
     )
     return true
   }
@@ -547,14 +584,15 @@ async function handleDiscountStep(ctx, wizard, text) {
       endsAt = date
     }
 
-    await setProductDiscount(data.productId, data.discountStars, new Date(), endsAt)
+    await setProductDiscount(data.productId, data.discountTzs, data.discountUsd, new Date(), endsAt)
     await auditLog(ctx.from.id, 'product.discount_set', {
       productId: data.productId,
-      discountStars: data.discountStars,
+      discountTzs: data.discountTzs,
+      discountUsd: data.discountUsd,
     })
     ctx.session.adminWizard = null
     await ctx.reply(
-      `✅ Punguzo limewekwa: ⭐ ${data.discountStars}${endsAt ? ` hadi ${endsAt.toLocaleDateString()}` : ' (forever)'}`,
+      `✅ Punguzo limewekwa: TZS ${data.discountTzs.toLocaleString('en-US')} (approx. $${data.discountUsd})${endsAt ? ` hadi ${endsAt.toLocaleDateString()}` : ' (forever)'}`,
       backToProductsKeyboard()
     )
     return true
@@ -606,7 +644,7 @@ async function showProductsList(ctx, page = 1) {
   for (const p of result.products) {
     const status = p.isActive ? '✅' : '❌'
     const featured = p.isFeatured ? '⭐' : ''
-    text += `${status}${featured} *${escapeMarkdown(p.name)}* — ⭐${p.priceStars} — ${p.salesCount} mauzo\n`
+    text += `${status}${featured} *${escapeMarkdown(p.name)}* — TZS ${p.priceTzs.toLocaleString('en-US')} — ${p.salesCount} mauzo\n`
   }
   text += `\n📄 Ukurasa ${result.page}/${result.totalPages}`
 
@@ -639,7 +677,7 @@ async function showProductDetail(ctx, productId) {
 
   const status = p.isActive ? '✅ Inafanya kazi' : '❌ Imezimwa'
   const featured = p.isFeatured ? '⭐ Featured' : '—'
-  const discount = isDiscountActive(p) ? `⭐ ${p.discountStars} (punguzo)` : 'Hakuna punguzo'
+  const discount = isDiscountActive(p) ? `TZS ${p.discountTzs.toLocaleString('en-US')} (approx. $${p.discountUsd.toFixed(2)})` : 'Hakuna punguzo'
 
   let text = [
     `📦 *${escapeMarkdown(p.name)}*`,
@@ -647,7 +685,8 @@ async function showProductDetail(ctx, productId) {
     `🆔 ID: ${p.id}`,
     `📂 Category: ${escapeMarkdown(p.category?.name || 'N/A')}`,
     `🏷️ Aina: ${p.productType}`,
-    `💫 Bei: ⭐ ${p.priceStars}`,
+    `💰 Bei TZS: TZS ${p.priceTzs.toLocaleString('en-US')}`,
+    `💰 Bei USD: $${p.priceUsd.toFixed(2)}`,
     `💸 Punguzo: ${discount}`,
     `📊 Mauzo: ${p.salesCount}`,
     `📦 Stock: ${p.stock === null ? 'Unlimited' : p.stock}`,

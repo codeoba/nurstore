@@ -183,13 +183,15 @@ async function showCustomersList(ctx, page = 1) {
 }
 
 async function showCustomerDetail(ctx, userId) {
+  const { getOrCreateWallet } = require('../services/walletService')
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {
       _count: { select: { orders: true, reviews: true } },
       orders: {
         where: { status: { in: ['paid', 'delivered'] } },
-        select: { totalStars: true },
+        select: { totalTzs: true },
       },
     },
   })
@@ -199,7 +201,8 @@ async function showCustomerDetail(ctx, userId) {
     return
   }
 
-  const totalSpent = user.orders.reduce((sum, o) => sum + o.totalStars, 0)
+  const wallet = await getOrCreateWallet(user.id)
+  const totalSpent = user.orders.reduce((sum, o) => sum + o.totalTzs, 0)
   const status = user.isBlocked ? '🚫 Amezuiwa' : '✅ Anafanya kazi'
 
   let text = [
@@ -212,8 +215,9 @@ async function showCustomerDetail(ctx, userId) {
     ``,
     `📊 *Takwimu:*`,
     `🛍️ Maagizo yote: ${user._count.orders}`,
-    `💫 Jumla aliyotumia: ⭐ ${totalSpent}`,
-    `⭐ Stars za referral: ${user.starsEarned}`,
+    `💫 Jumla aliyotumia: TZS ${totalSpent.toLocaleString('en-US')}`,
+    `💳 Salio la Wallet: TZS ${wallet.balance.toLocaleString('en-US')}`,
+    `💰 Komisheni ya referral: TZS ${user.commissionEarned.toLocaleString('en-US')}`,
     `📝 Reviews: ${user._count.reviews}`,
     ``,
     `📊 Hali: ${status}`,

@@ -1,17 +1,12 @@
 'use strict'
 
 const { prisma } = require('../database')
-const { markOrderPaid, checkFraud } = require('../services/orderService')
-const { deliverOrder } = require('../services/deliveryService')
-const { awardReferralCommission } = require('../services/referralService')
-const { notifyAdminPaymentReceived } = require('../services/notificationService')
+const { creditWallet } = require('../services/walletService')
 const logger = require('../utils/logger')
+const config = require('../config')
 
 /**
  * Handler ya Telegram pre_checkout_query
- *
- * Telegram inaita hii ndani ya sekunde 10 baada ya mtumiaji kuthibitisha invoice.
- * Lazima tujibu kwa answerPreCheckoutQuery() ndani ya sekunde 10!
  *
  * @param {import('telegraf').Context} ctx
  */
@@ -28,7 +23,6 @@ async function handlePreCheckout(ctx) {
   })
 
   try {
-    // Parse payload
     let payload
     try {
       payload = JSON.parse(query.invoice_payload)
@@ -37,52 +31,37 @@ async function handlePreCheckout(ctx) {
       return
     }
 
-    // Thibitisha order bado ipo na ni pending
-    const order = await prisma.order.findUnique({
-      where: { id: payload.orderId },
-      select: { id: true, status: true, totalStars: true, userId: true },
-    })
-
-    if (!order) {
-      await ctx.answerPreCheckoutQuery(false, 'Order haipatikani. Jaribu tena.')
+    if (payload.type !== 'deposit') {
+      await ctx.answerPreCheckoutQuery(false, 'Aina ya invoice haitambuliwi.')
       return
     }
 
-    if (order.status !== 'pending') {
-      await ctx.answerPreCheckoutQuery(false, 'Order hii tayari imeshughulikiwa.')
+    // Thibitisha mtumiaji ni yule yule
+    if (payload.userId !== query.from.id) {
+      await ctx.answerPreCheckoutQuery(false, 'Mtumiaji si sahihi.')
       return
     }
 
-    // Thibitisha mtumiaji ni sahihi
-    const user = await prisma.user.findUnique({
-      where: { telegramId: BigInt(query.from.id) },
-      select: { id: true },
-    })
-
-    if (!user || user.id !== order.userId) {
-      await ctx.answerPreCheckoutQuery(false, 'Ombi halijakuwa na ruhusa.')
-      return
-    }
-
-    // Thibitisha amount (fraud check)
-    if (query.total_amount !== order.totalStars) {
+    // Kagua kiasi (invoice total_amount inawakilisha cents, kwa hiyo gawa kwa 100)
+    // TZS au USD mara nyingi huwa na decimal 2 kwenye Telegram
+    const amountTzs = Math.round(query.total_amount / 100)
+    if (amountTzs !== payload.amountTzs) {
       logger.security('PRE_CHECKOUT_AMOUNT_MISMATCH', {
-        orderId: order.id,
-        expected: order.totalStars,
-        received: query.total_amount,
+        expected: payload.amountTzs,
+        received: amountTzs,
         userId: query.from.id,
       })
-      await ctx.answerPreCheckoutQuery(false, 'Hitilafu ya bei. Jaribu tena.')
+      await ctx.answerPreCheckoutQuery(false, 'Hitilafu ya kiasi cha malipo.')
       return
     }
 
-    // Kila kitu sawa — ruhusu malipo
+    // Kila kitu kiko sawa
     await ctx.answerPreCheckoutQuery(true)
 
     logger.payment({
       event: 'PRE_CHECKOUT_APPROVED',
-      orderId: order.id,
       userId: query.from.id,
+      amountTzs,
     })
   } catch (err) {
     logger.error('Pre-checkout handler error', { error: err.message })
@@ -94,9 +73,6 @@ async function handlePreCheckout(ctx) {
 
 /**
  * Handler ya successful_payment
- *
- * Telegram inaita hii baada ya mtumiaji kulipa kwa mafanikio.
- * Hapa ndipo tunatekeleza delivery ya bidhaa.
  *
  * @param {import('telegraf').Context} ctx
  */
@@ -115,83 +91,81 @@ async function handleSuccessfulPayment(ctx) {
   })
 
   try {
-    // Parse payload
     let payload
     try {
       payload = JSON.parse(payment.invoice_payload)
     } catch {
       logger.error('Failed to parse payment payload', { payload: payment.invoice_payload })
-      await ctx.reply('✅ Malipo yamepokelewa! Tafadhali wasiliana na /support kama hupokei bidhaa.')
+      await ctx.reply('✅ Malipo yamepokelewa! Tafadhali wasiliana na msaada (/support) kama salio haliongezeki.')
       return
     }
 
-    const orderId = payload.orderId
-
-    // Fraud check
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, totalStars: true, userId: true },
-    })
-
-    if (!order) {
-      logger.error('Order not found after successful payment', { orderId, telegramChargeId: payment.telegram_payment_charge_id })
-      await ctx.reply('✅ Malipo yamepokelewa! Tunaproces bidhaa yako...')
-      return
-    }
-
-    const fraudCheck = await checkFraud(order, payment.total_amount)
-    if (fraudCheck.isFraud) {
-      logger.security('FRAUD_AFTER_PAYMENT', {
-        orderId,
-        reasons: fraudCheck.reasons,
-        telegramChargeId: payment.telegram_payment_charge_id,
+    if (payload.type === 'deposit') {
+      const user = await prisma.user.findUnique({
+        where: { telegramId: BigInt(telegramUserId) },
+        select: { id: true, fullName: true },
       })
-      // Endelea kutuma bidhaa hata kama kuna fraud flag (Telegram tayari imechukua malipo)
-      // Admin ataona flag na ataangalia baadaye
-    }
 
-    // Mark order kama paid na pata order kamili
-    const paidOrder = await markOrderPaid(
-      orderId,
-      payment.telegram_payment_charge_id,
-      {
-        telegram_payment_charge_id: payment.telegram_payment_charge_id,
-        provider_payment_charge_id: payment.provider_payment_charge_id,
-        total_amount: payment.total_amount,
-        currency: payment.currency,
+      if (!user) {
+        throw new Error('Mtumiaji hajapatikana kwenye database')
       }
-    )
 
-    if (!paidOrder) {
-      // Tayari imeshughulikiwa (duplicate)
-      logger.warn('Duplicate payment event ignored', { orderId })
-      return
-    }
+      const amountTzs = payload.amountTzs
 
-    // Tuma bidhaa mara moja
-    await deliverOrder(ctx.telegram, telegramUserId, paidOrder)
-
-    // Toa commission kwa referral (kama ipo)
-    await awardReferralCommission(paidOrder.userId, paidOrder.totalStars)
-      .then(commission => {
-        if (commission > 0) {
-          // Tuma notification kwa mwasilishaji (background)
-          notifyReferralCommissionIfNeeded(ctx, paidOrder.userId, commission)
-        }
+      // Unda dummy order kwa ajili ya audit trail na relation ya Payment table
+      const order = await prisma.order.create({
+        data: {
+          userId: user.id,
+          totalTzs: amountTzs,
+          status: 'paid',
+          paymentMethod: 'telegram_provider',
+          paymentReference: payment.telegram_payment_charge_id,
+          notes: `Deposit ya TZS ${amountTzs.toLocaleString('en-US')} kupitia Telegram Provider`,
+          paidAt: new Date(),
+        },
       })
-      .catch(() => {})
 
-    // Notify admin
-    await notifyAdminPaymentReceived(ctx.telegram, paidOrder)
-      .catch(() => {})
+      // Hifadhi muamala kwenye Payment table
+      await prisma.payment.create({
+        data: {
+          orderId: order.id,
+          gateway: 'telegram_provider',
+          telegramChargeId: payment.telegram_payment_charge_id,
+          providerChargeId: payment.provider_payment_charge_id,
+          amountTzs,
+          currency: payment.currency || 'TZS',
+          status: 'completed',
+          rawResponse: JSON.parse(JSON.stringify(payment)),
+        },
+      })
 
-    // Futa cart ya mtumiaji baada ya ununuzi
-    const dbUser = await prisma.user.findUnique({
-      where: { telegramId: BigInt(telegramUserId) },
-      select: { id: true },
-    })
-    if (dbUser) {
-      await prisma.cartItem.deleteMany({ where: { userId: dbUser.id } }).catch(() => {})
+      // Credit wallet
+      await creditWallet(
+        user.id,
+        amountTzs,
+        'deposit',
+        'telegram_provider',
+        payment.telegram_payment_charge_id,
+        { orderId: order.id }
+      )
+
+      await ctx.reply(
+        `✅ *Malipo Yamepokelewa\\!*\n\n` +
+        `Salio la *TZS ${amountTzs.toLocaleString('en-US')}* limeongezwa kwenye Wallet yako\\.\n` +
+        `Tumia menu ya /start kununua bidhaa\\.`,
+        { parse_mode: 'MarkdownV2' }
+      )
+
+      // Notify admins
+      const { notifyAdmins } = require('../services/notificationService')
+      const userName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
+      await notifyAdmins(
+        ctx.telegram,
+        `💳 *Muamala wa Kadi (Wallet Deposit)*\n\n` +
+        `👤 Mteja: ${userName}\n` +
+        `💰 Kiasi: TZS ${amountTzs.toLocaleString('en-US')}\n` +
+        `🔗 Reference: \`${payment.telegram_payment_charge_id}\``
+      ).catch(() => {})
     }
   } catch (err) {
     logger.error('Successful payment handler error', {
@@ -199,114 +173,48 @@ async function handleSuccessfulPayment(ctx) {
       telegramUserId,
       chargeId: payment.telegram_payment_charge_id,
     })
-
     await ctx.reply(
-      '✅ Malipo yamefanikiwa! Tunashughulikia bidhaa yako.\n' +
-      'Kama hupokei bidhaa ndani ya dakika 5, tafadhali wasiliana nasi: /support'
+      '✅ Malipo yamepokelewa lakini kulitokea hitilafu ya kiufundi kuongeza salio.\n' +
+      'Tafadhali wasiliana na /support ukionyesha ujumbe huu kwa msaada wa haraka.'
     ).catch(() => {})
   }
 }
 
 /**
- * Unda Telegram invoice payload kwa order
- * @param {number} orderId
- * @param {number} userId - Telegram user ID
- * @returns {string} JSON payload
+ * Tuma invoice ya kuweka salio
+ * @param {import('telegraf').Context} ctx
+ * @param {number} userId - Telegram User ID
+ * @param {number} amountTzs - Kiasi cha kuongeza kwa TZS
  */
-function createInvoicePayload(orderId, userId) {
-  return JSON.stringify({
-    orderId,
+async function sendDepositInvoice(ctx, userId, amountTzs) {
+  const providerToken = config.payments.providerToken
+  if (!providerToken) {
+    throw new Error('PAYMENT_PROVIDER_TOKEN haijawekwa kwenye .env')
+  }
+
+  const payload = JSON.stringify({
+    type: 'deposit',
     userId,
+    amountTzs,
     timestamp: Date.now(),
   })
-}
 
-/**
- * Unda invoice parameters kwa bidhaa moja (Buy Now)
- */
-function buildInvoice(order, product, payload) {
-  const { isDiscountActive } = require('../utils/formatting')
-  const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
+  // Telegram invoice inahitaji kiasi kiwe katika cents (amount * 100)
+  const prices = [{ label: `Wallet Top Up (TZS ${amountTzs.toLocaleString('en-US')})`, amount: amountTzs * 100 }]
 
-  return {
-    title: product.name.substring(0, 32), // Telegram limit: 32 chars
-    description: (product.description || '').substring(0, 255), // Limit: 255 chars
+  await ctx.replyWithInvoice({
+    title: 'Weka Salio (Card/Mobile Money)',
+    description: `Ongeza salio la TZS ${amountTzs.toLocaleString('en-US')} kwenye wallet yako.`,
     payload,
-    currency: 'XTR',
-    prices: [{ label: product.name.substring(0, 32), amount: stars }],
-    // Picha ya bidhaa (kama ipo)
-    ...(product.thumbnailFileId && { photo_url: null }), // Telegram Stars haichukui photo_url
-  }
-}
-
-/**
- * Unda invoice parameters kwa cart (bidhaa nyingi)
- */
-function buildCartInvoice(order, cartItems, payload) {
-  const { isDiscountActive } = require('../utils/formatting')
-
-  const prices = cartItems.map(item => {
-    const product = item.product
-    const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-    return {
-      label: product.name.substring(0, 32),
-      amount: stars * item.quantity,
-    }
-  })
-
-  // Ongeza discount kama ipo
-  if (order.couponDiscount && order.couponDiscount > 0) {
-    prices.push({
-      label: `🎟️ Coupon Discount`,
-      amount: -order.couponDiscount,
-    })
-  }
-
-  const storeName = require('../config').bot.storeName
-
-  return {
-    title: `${storeName} — Ununuzi`.substring(0, 32),
-    description: `Bidhaa ${cartItems.length}: ${cartItems.map(i => i.product.name).join(', ')}`.substring(0, 255),
-    payload,
-    currency: 'XTR',
+    provider_token: providerToken,
+    currency: 'TZS',
     prices,
-  }
-}
-
-// ─── Background Helpers ───────────────────────────────────────
-
-async function notifyReferralCommissionIfNeeded(ctx, buyerUserId, commission) {
-  try {
-    const { notifyReferralCommission } = require('../services/notificationService')
-    const buyer = await prisma.user.findUnique({
-      where: { id: buyerUserId },
-      select: { referredBy: true, fullName: true },
-    })
-
-    if (!buyer?.referredBy) return
-
-    const referrer = await prisma.user.findUnique({
-      where: { id: buyer.referredBy },
-      select: { telegramId: true },
-    })
-
-    if (!referrer) return
-
-    await notifyReferralCommission(
-      ctx.telegram,
-      Number(referrer.telegramId),
-      commission,
-      buyer.fullName
-    )
-  } catch (err) {
-    logger.error('Referral notification error', { error: err.message })
-  }
+    start_parameter: 'wallet-deposit',
+  })
 }
 
 module.exports = {
   handlePreCheckout,
   handleSuccessfulPayment,
-  createInvoicePayload,
-  buildInvoice,
-  buildCartInvoice,
+  sendDepositInvoice,
 }

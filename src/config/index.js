@@ -65,8 +65,13 @@ const config = {
 
   // Payments
   payments: {
-    providerToken: optional('PAYMENT_PROVIDER_TOKEN', ''), // tupu = Stars tu
-    starsOnly: !process.env.PAYMENT_PROVIDER_TOKEN, // true kama hakuna provider token
+    providerToken: optional('PAYMENT_PROVIDER_TOKEN', ''),
+    binance: {
+      apiKey: optional('BINANCE_API_KEY', ''),
+      apiSecret: optional('BINANCE_API_SECRET', ''),
+      baseUrl: optional('BINANCE_BASE_URL', 'https://bpay.binanceapi.com'),
+      usdtToTzsRate: parseInt(optional('USDT_TO_TZS_RATE', '2600'), 10),
+    },
   },
 
   // File Storage
@@ -97,12 +102,12 @@ const config = {
 
   // Currency
   currency: {
-    tzsSPerStar: parseInt(optional('TZS_PER_STAR', '32'), 10),
+    usdToTzsRate: parseInt(optional('USD_TO_TZS_RATE', '2600'), 10),
   },
 
   // Referral
   referral: {
-    commissionStars: parseInt(optional('REFERRAL_COMMISSION_STARS', '5'), 10),
+    commissionTzs: parseInt(optional('REFERRAL_COMMISSION_TZS', '2000'), 10), // Default TZS 2000 per referral purchase
   },
 
   // Jobs

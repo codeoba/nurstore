@@ -1,6 +1,8 @@
 'use strict'
 
 const { prisma } = require('../database')
+const { debitWallet } = require('./walletService')
+const { awardReferralCommission } = require('./referralService')
 const logger = require('../utils/logger')
 
 // ─── Cart Management ─────────────────────────────────────────
@@ -16,8 +18,10 @@ async function getUserCart(userId) {
         select: {
           id: true,
           name: true,
-          priceStars: true,
-          discountStars: true,
+          priceTzs: true,
+          priceUsd: true,
+          discountTzs: true,
+          discountUsd: true,
           discountStartsAt: true,
           discountEndsAt: true,
           stock: true,
@@ -31,14 +35,14 @@ async function getUserCart(userId) {
 }
 
 /**
- * Hesabu jumla ya Stars kwa cart
+ * Hesabu jumla ya bei kwa cart (TZS)
  */
 function calculateCartTotal(cartItems) {
   const { isDiscountActive } = require('../utils/formatting')
   return cartItems.reduce((total, item) => {
     const product = item.product
-    const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-    return total + (stars * item.quantity)
+    const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+    return total + (price * item.quantity)
   }, 0)
 }
 
@@ -49,7 +53,7 @@ function calculateCartTotal(cartItems) {
  * @param {number} userId - DB user ID
  * @param {Array} cartItems - Cart items na product info
  * @param {number|null} couponId - Optional coupon
- * @param {number} couponDiscount - Stars zilizopunguzwa
+ * @param {number} couponDiscount - TZS zilizopunguzwa
  * @returns {object} Order iliyoundwa
  */
 async function createOrderFromCart(userId, cartItems, couponId = null, couponDiscount = 0) {
@@ -70,34 +74,49 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
     }
   }
 
-  const totalStars = calculateCartTotal(cartItems) - couponDiscount
-  if (totalStars < 1) throw new Error('Jumla ya bei lazima iwe Stars 1+')
+  const totalTzs = calculateCartTotal(cartItems) - couponDiscount
+  if (totalTzs < 100) throw new Error('Jumla ya bei lazima iwe zaidi ya TZS 100')
 
   // Tengeneza order na items zote kwenye transaction moja
   const order = await prisma.$transaction(async (tx) => {
     const newOrder = await tx.order.create({
       data: {
         userId,
-        totalStars: Math.max(totalStars, 1),
+        totalTzs: Math.max(totalTzs, 100),
         status: 'pending',
-        paymentMethod: 'telegram_stars',
+        paymentMethod: 'wallet',
         couponId,
         couponDiscount: couponDiscount || null,
         items: {
           create: cartItems.map(item => {
             const product = item.product
-            const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
+            const tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+            const usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
             return {
               productId: product.id,
-              starsAtPurchase: stars,
-              priceAtPurchase: stars * 32,
+              priceTzsAtPurchase: tzs,
+              priceUsdAtPurchase: usd || 0.0,
               quantity: item.quantity,
             }
           }),
         },
       },
       include: {
-        items: { include: { product: { select: { id: true, name: true, productType: true } } } },
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                productType: true,
+                filePath: true,
+                fileTelegramId: true,
+                lockedContent: true,
+                contentFormat: true,
+              },
+            },
+          },
+        },
       },
     })
 
@@ -107,7 +126,7 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
   logger.info('Order created', {
     orderId: order.id,
     userId,
-    totalStars: order.totalStars,
+    totalTzs: order.totalTzs,
     itemsCount: cartItems.length,
   })
 
@@ -125,8 +144,10 @@ async function createDirectOrder(userId, productId, couponId = null, couponDisco
     select: {
       id: true,
       name: true,
-      priceStars: true,
-      discountStars: true,
+      priceTzs: true,
+      priceUsd: true,
+      discountTzs: true,
+      discountUsd: true,
       discountStartsAt: true,
       discountEndsAt: true,
       stock: true,
@@ -137,95 +158,126 @@ async function createDirectOrder(userId, productId, couponId = null, couponDisco
   if (!product) throw new Error('Bidhaa haipatikani')
   if (product.stock !== null && product.stock < 1) throw new Error('Bidhaa imekwisha')
 
-  const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
-  const totalStars = Math.max(stars - couponDiscount, 1)
+  const tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  const usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
+  const totalTzs = Math.max(tzs - couponDiscount, 100)
 
   const order = await prisma.order.create({
     data: {
       userId,
-      totalStars,
+      totalTzs,
       status: 'pending',
-      paymentMethod: 'telegram_stars',
+      paymentMethod: 'wallet',
       couponId,
       couponDiscount: couponDiscount || null,
       items: {
         create: [{
           productId: product.id,
-          starsAtPurchase: stars,
-          priceAtPurchase: stars * 32,
+          priceTzsAtPurchase: tzs,
+          priceUsdAtPurchase: usd || 0.0,
           quantity: 1,
         }],
       },
     },
     include: {
-      items: { include: { product: true } },
+      items: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              productType: true,
+              filePath: true,
+              fileTelegramId: true,
+              lockedContent: true,
+              contentFormat: true,
+            },
+          },
+        },
+      },
     },
   })
 
-  logger.info('Direct order created', { orderId: order.id, userId, productId, totalStars })
+  logger.info('Direct order created', { orderId: order.id, userId, productId, totalTzs })
   return order
 }
 
-// ─── Order Status Management ──────────────────────────────────
+// ─── Wallet Payment Checkout ─────────────────────────────────
 
 /**
- * Weka order kama imelipwa
- * @param {number} orderId
- * @param {string} telegramChargeId - Telegram payment charge ID
- * @param {object} rawPayment - Full payment object kutoka Telegram
+ * Lipia order kwa kutumia Salio la Wallet
+ *
+ * @param {number} userId - User Database ID
+ * @param {number} orderId - Order ID
  */
-async function markOrderPaid(orderId, telegramChargeId, rawPayment = {}) {
-  const order = await prisma.$transaction(async (tx) => {
-    // Angalia kama order tayari imelipwa (kuzuia duplicate processing)
-    const existing = await tx.payment.findUnique({
-      where: { orderId },
-    })
-
-    if (existing?.status === 'completed') {
-      logger.warn('Duplicate payment attempt', { orderId, telegramChargeId })
-      return null
-    }
-
-    // Weka idempotency key kuzuia double-processing
-    const idempotencyKey = `tg_${telegramChargeId}`
-
-    // Check kama charge ID tayari imeshatumika
-    const existingByCharge = await tx.payment.findUnique({
-      where: { idempotencyKey }
-    }).catch(() => null)
-
-    if (existingByCharge) {
-      logger.warn('Duplicate charge ID', { telegramChargeId, orderId })
-      return null
-    }
-
-    // Unda payment record
-    await tx.payment.upsert({
-      where: { orderId },
-      update: {
-        telegramChargeId,
-        status: 'completed',
-        rawResponse: rawPayment,
-        idempotencyKey,
-      },
-      create: {
-        orderId,
-        gateway: 'telegram_stars',
-        telegramChargeId,
-        amount: rawPayment.total_amount || 0,
-        currency: rawPayment.currency || 'XTR',
-        status: 'completed',
-        rawResponse: rawPayment,
-        idempotencyKey,
+async function payOrderWithWallet(userId, orderId) {
+  return prisma.$transaction(async (tx) => {
+    // 1. Pata na kagua order
+    const order = await tx.order.findFirst({
+      where: { id: orderId, userId, status: 'pending' },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                stock: true,
+                isActive: true,
+              },
+            },
+          },
+        },
       },
     })
 
-    // Update order status
+    if (!order) {
+      throw new Error('Order haipatikani au tayari ilishalipiwa')
+    }
+
+    // 2. Kagua stock za bidhaa tena
+    for (const item of order.items) {
+      const product = item.product
+      if (!product.isActive) {
+        throw new Error(`Bidhaa "${product.name}" haipo tena active`)
+      }
+      if (product.stock !== null && product.stock < item.quantity) {
+        throw new Error(`Bidhaa "${product.name}" imekwisha stock (zilizobaki: ${product.stock})`)
+      }
+    }
+
+    // 3. Debit wallet ya mtumiaji
+    const transactionId = `W_PAY_${order.id}_${Date.now()}`
+    const wallet = await tx.wallet.findUnique({ where: { userId } })
+    if (!wallet || wallet.balance < order.totalTzs) {
+      throw new Error(`Salio lako halitoshi. Inahitajika: TZS ${order.totalTzs.toLocaleString('en-US')}`)
+    }
+
+    // Punguza salio la wallet
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { decrement: order.totalTzs } },
+    })
+
+    // Unda transaction record kwenye wallet_transactions
+    await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: -order.totalTzs,
+        type: 'purchase',
+        status: 'completed',
+        referenceId: String(order.id),
+        completedAt: new Date(),
+      },
+    })
+
+    // 4. Update order na kuongeza sales count / kupunguza stock
     const updatedOrder = await tx.order.update({
       where: { id: orderId },
       data: {
         status: 'paid',
-        paymentReference: telegramChargeId,
+        paymentMethod: 'wallet',
+        paymentReference: transactionId,
         paidAt: new Date(),
       },
       include: {
@@ -248,47 +300,55 @@ async function markOrderPaid(orderId, telegramChargeId, rawPayment = {}) {
       },
     })
 
-    return updatedOrder
-  })
-
-  if (order) {
-    logger.payment({
-      event: 'ORDER_PAID',
-      orderId,
-      telegramChargeId,
-      totalStars: order.totalStars,
-      userId: order.userId,
+    // Hifadhi record kwenye table ya payments pia kwa ajili ya audit
+    await tx.payment.create({
+      data: {
+        orderId: order.id,
+        gateway: 'wallet',
+        telegramChargeId: transactionId,
+        amountTzs: order.totalTzs,
+        status: 'completed',
+      },
     })
 
-    // Punguza stock kwa kila bidhaa
+    // Sasisha stock na sales count
     for (const item of order.items) {
-      if (item.product && item.product.stock !== null) {
-        await prisma.product.update({
+      if (item.product.stock !== null) {
+        await tx.product.update({
           where: { id: item.product.id },
           data: {
             stock: { decrement: item.quantity },
             salesCount: { increment: item.quantity },
           },
-        }).catch(err => logger.error('Stock update error', { error: err.message }))
-      } else if (item.product) {
-        await prisma.product.update({
+        })
+      } else {
+        await tx.product.update({
           where: { id: item.product.id },
           data: { salesCount: { increment: item.quantity } },
-        }).catch(() => {})
+        })
       }
     }
 
-    // Tumia coupon (increment used_count)
+    // Sasisha coupon usage kama ipo
     if (order.couponId) {
-      await prisma.coupon.update({
+      await tx.coupon.update({
         where: { id: order.couponId },
         data: { usedCount: { increment: 1 } },
-      }).catch(() => {})
+      })
     }
-  }
 
-  return order
+    logger.payment({
+      event: 'ORDER_PAID_WALLET',
+      orderId: order.id,
+      userId,
+      totalTzs: order.totalTzs,
+    })
+
+    return updatedOrder
+  })
 }
+
+// ─── Status Management ────────────────────────────────────────
 
 /**
  * Weka order kama imetumwa (delivered)
@@ -449,9 +509,8 @@ async function adminGetOrders(page = 1, filters = {}) {
 async function checkFraud(order, paymentAmount) {
   const reasons = []
 
-  // Angalia kama amount haiendani na bei ya bidhaa
-  if (Math.abs(paymentAmount - order.totalStars) > 2) {
-    reasons.push(`Amount mismatch: expected ${order.totalStars}, got ${paymentAmount}`)
+  if (Math.abs(paymentAmount - order.totalTzs) > 500) {
+    reasons.push(`Amount mismatch: expected ${order.totalTzs}, got ${paymentAmount}`)
   }
 
   if (reasons.length > 0) {
@@ -464,7 +523,7 @@ async function checkFraud(order, paymentAmount) {
       orderId: order.id,
       reasons,
       paymentAmount,
-      expectedAmount: order.totalStars,
+      expectedAmount: order.totalTzs,
     })
 
     return { isFraud: true, reasons }
@@ -478,7 +537,7 @@ module.exports = {
   calculateCartTotal,
   createOrderFromCart,
   createDirectOrder,
-  markOrderPaid,
+  payOrderWithWallet,
   markOrderDelivered,
   adminManualConfirm,
   cancelOrder,

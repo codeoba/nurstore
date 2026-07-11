@@ -42,8 +42,8 @@ async function getProductsPage(page = 1, filters = {}) {
         nameEn: true,
         description: true,
         descriptionEn: true,
-        price: true,
-        priceStars: true,
+        priceTzs: true,
+        priceUsd: true,
         productType: true,
         thumbnailPath: true,
         thumbnailFileId: true,
@@ -51,7 +51,8 @@ async function getProductsPage(page = 1, filters = {}) {
         isFeatured: true,
         previewDescription: true,
         features: true,
-        discountStars: true,
+        discountTzs: true,
+        discountUsd: true,
         discountStartsAt: true,
         discountEndsAt: true,
         salesCount: true,
@@ -86,8 +87,8 @@ async function getProductPreview(productId) {
       nameEn: true,
       description: true,
       descriptionEn: true,
-      price: true,
-      priceStars: true,
+      priceTzs: true,
+      priceUsd: true,
       productType: true,
       thumbnailPath: true,
       thumbnailFileId: true,
@@ -96,7 +97,8 @@ async function getProductPreview(productId) {
       isFeatured: true,
       previewDescription: true,
       features: true,
-      discountStars: true,
+      discountTzs: true,
+      discountUsd: true,
       discountStartsAt: true,
       discountEndsAt: true,
       salesCount: true,
@@ -204,7 +206,8 @@ async function adminGetProducts(page = 1, filters = {}) {
       select: {
         id: true,
         name: true,
-        priceStars: true,
+        priceTzs: true,
+        priceUsd: true,
         productType: true,
         stock: true,
         isActive: true,
@@ -236,8 +239,8 @@ async function createProduct(data) {
       name: data.name,
       nameEn: data.nameEn || null,
       description: data.description,
-      price: data.priceStars * 32, // approximate TZS
-      priceStars: data.priceStars,
+      priceTzs: data.priceTzs,
+      priceUsd: data.priceUsd,
       categoryId: data.categoryId,
       productType: data.productType,
       filePath: data.filePath || null,
@@ -288,11 +291,12 @@ async function deleteProduct(productId) {
 /**
  * Badilisha discount ya bidhaa
  */
-async function setProductDiscount(productId, discountStars, startsAt, endsAt) {
+async function setProductDiscount(productId, discountTzs, discountUsd, startsAt, endsAt) {
   return prisma.product.update({
     where: { id: productId },
     data: {
-      discountStars,
+      discountTzs,
+      discountUsd,
       discountStartsAt: startsAt,
       discountEndsAt: endsAt,
     },
@@ -353,7 +357,8 @@ async function getBestSellers(limit = 5) {
     select: {
       id: true,
       name: true,
-      priceStars: true,
+      priceTzs: true,
+      priceUsd: true,
       salesCount: true,
       thumbnailFileId: true,
       productType: true,
@@ -384,8 +389,10 @@ async function getRecommendations(productId, limit = 3) {
     select: {
       id: true,
       name: true,
-      priceStars: true,
-      discountStars: true,
+      priceTzs: true,
+      priceUsd: true,
+      discountTzs: true,
+      discountUsd: true,
       discountEndsAt: true,
       thumbnailFileId: true,
     },

@@ -95,7 +95,7 @@ function registerBrowseHandlers(bot) {
     const wishlist = await require('../database').prisma.wishlistItem.findMany({
       where: { userId: user.id },
       include: {
-        product: { select: { id: true, name: true, priceStars: true, discountStars: true, discountEndsAt: true, isActive: true } }
+        product: { select: { id: true, name: true, priceTzs: true, discountTzs: true, discountEndsAt: true, isActive: true } }
       },
     })
 
@@ -115,8 +115,8 @@ function registerBrowseHandlers(bot) {
 
     const buttons = wishlist.map(item => {
       const p = item.product
-      const stars = isDiscountActive(p) ? p.discountStars : p.priceStars
-      return [Markup.button.callback(`${p.name.substring(0, 25)} — ⭐${stars}`, `store:product:${p.id}`)]
+      const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
+      return [Markup.button.callback(`${p.name.substring(0, 22)} — TZS ${price.toLocaleString('en-US')}`, `store:product:${p.id}`)]
     })
 
     buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:menu')])
@@ -164,8 +164,8 @@ async function handleSearchQuery(ctx) {
     : `🔍 *Results for "${escapeMarkdown(query)}" \\(${result.total}\\):*\n`
 
   const buttons = result.products.map(p => {
-    const stars = isDiscountActive(p) ? p.discountStars : p.priceStars
-    return [Markup.button.callback(`${p.name.substring(0, 30)} — ⭐${stars}`, `store:product:${p.id}`)]
+    const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
+    return [Markup.button.callback(`${p.name.substring(0, 22)} — TZS ${price.toLocaleString('en-US')}`, `store:product:${p.id}`)]
   })
   buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:menu')])
 
@@ -247,7 +247,6 @@ async function showProductsInCategory(ctx, catId, page, lang = 'sw') {
 
 async function showSingleProductInBrowse(ctx, product, meta) {
   const { lang, currentIndex, total, catId, allProducts } = meta
-  const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
 
   // Format card
   const text = product.productType === 'text_content'
@@ -367,8 +366,8 @@ async function showFeaturedProducts(ctx, lang = 'sw') {
   const title = lang === 'sw' ? `⭐ *Bidhaa Maarufu \\(${result.total}\\):*` : `⭐ *Featured Products \\(${result.total}\\):*`
 
   const buttons = result.products.map(p => {
-    const stars = isDiscountActive(p) ? p.discountStars : p.priceStars
-    return [Markup.button.callback(`${p.name.substring(0, 30)} — ⭐${stars}`, `store:product:${p.id}`)]
+    const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
+    return [Markup.button.callback(`${p.name.substring(0, 22)} — TZS ${price.toLocaleString('en-US')}`, `store:product:${p.id}`)]
   })
   buttons.push([Markup.button.callback('◀️', 'store:browse')])
 
