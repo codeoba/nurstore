@@ -89,8 +89,9 @@ function registerAdminRouter(bot) {
   bot.action('admin:menu', isAdmin, (ctx) => showAdminMenu(ctx))
 
   // ─── Products ─────────────────────────────────────────────
-  const { registerAdminProductHandlers } = require('./products')
+  const { registerAdminProductHandlers, registerWizardCategoryCallback } = require('./products')
   registerAdminProductHandlers(bot)
+  registerWizardCategoryCallback(bot)
 
   // ─── Orders ──────────────────────────────────────────────
   const { registerAdminOrderHandlers } = require('./orders')
@@ -105,8 +106,9 @@ function registerAdminRouter(bot) {
   registerAdminAnalyticsHandlers(bot)
 
   // ─── Settings ─────────────────────────────────────────────
-  const { registerAdminSettingsHandlers } = require('./settings')
+  const { registerAdminSettingsHandlers, registerAddAdminRoleCallback } = require('./settings')
   registerAdminSettingsHandlers(bot)
+  registerAddAdminRoleCallback(bot)
 
   // ─── Coupons ──────────────────────────────────────────────
   registerCouponHandlers(bot)
