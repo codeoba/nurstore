@@ -25,60 +25,57 @@ const SESSION_TTL = config.app.sessionTtlHours * 3600
 
 // ─── Redis Session Store ─────────────────────────────────────
 
-const redisStore = {
-  async get(key) {
-    try {
-      const val = await redis.get(`sess:${key}`)
-      return val ? JSON.parse(val) : undefined
-    } catch (err) {
-      logger.error('Session get error', { key, error: err.message })
-      return undefined
-    }
-  },
-
-  async set(key, value) {
-    try {
-      await redis.setex(`sess:${key}`, SESSION_TTL, JSON.stringify(value))
-    } catch (err) {
-      logger.error('Session set error', { key, error: err.message })
-    }
-  },
-
-  async delete(key) {
-    try {
-      await redis.del(`sess:${key}`)
-    } catch (err) {
-      logger.error('Session delete error', { key, error: err.message })
-    }
-  },
-}
-
-// ─── Session Middleware ──────────────────────────────────────
+// ─── Redis Session Store Generator ─────────────────────────────
 
 /**
- * Session middleware yenye Redis backend
- *
- * Session data ina:
- * - language: "sw" | "en"
- * - adminWizard: { scene, step, data } - kwa admin multi-step flows
- * - userWizard: { scene, step, data } - kwa user multi-step flows
- * - lastCartReminder: timestamp - kudhibiti reminders
+ * Session middleware generator with Redis backend
+ * @param {import('ioredis').Redis} redisClient - Redis client instance
  */
-const sessionMiddleware = session({
-  store: redisStore,
-  getSessionKey: (ctx) => {
-    // Tumia chat ID + user ID kama key ya kipekee
-    const chatId = ctx.chat?.id || ctx.from?.id
-    const userId = ctx.from?.id
-    return `${chatId}:${userId}`
-  },
-  defaultSession: () => ({
-    language: 'sw',
-    adminWizard: null,
-    userWizard: null,
-    lastCartReminder: null,
-  }),
-})
+function redisSession(redisClient) {
+  const store = {
+    async get(key) {
+      try {
+        const val = await redisClient.get(`sess:${key}`)
+        return val ? JSON.parse(val) : undefined
+      } catch (err) {
+        logger.error('Session get error', { key, error: err.message })
+        return undefined
+      }
+    },
+
+    async set(key, value) {
+      try {
+        await redisClient.setex(`sess:${key}`, SESSION_TTL, JSON.stringify(value))
+      } catch (err) {
+        logger.error('Session set error', { key, error: err.message })
+      }
+    },
+
+    async delete(key) {
+      try {
+        await redisClient.del(`sess:${key}`)
+      } catch (err) {
+        logger.error('Session delete error', { key, error: err.message })
+      }
+    },
+  }
+
+  return session({
+    store,
+    getSessionKey: (ctx) => {
+      // Tumia chat ID + user ID kama key ya kipekee
+      const chatId = ctx.chat?.id || ctx.from?.id
+      const userId = ctx.from?.id
+      return `${chatId}:${userId}`
+    },
+    defaultSession: () => ({
+      language: 'sw',
+      adminWizard: null,
+      userWizard: null,
+      lastCartReminder: null,
+    }),
+  })
+}
 
 /**
  * Futa wizard state ya session (baada ya wizard kukamilika au kufutwa)
@@ -99,8 +96,7 @@ function getUserLanguage(ctx) {
 }
 
 module.exports = {
-  sessionMiddleware,
-  redis,
+  redisSession,
   clearWizardState,
   getUserLanguage,
 }
