@@ -1,0 +1,347 @@
+// ============================================================
+// Prisma Schema — Telegram Digital Store Bot
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────
+
+enum ProductType {
+  file
+  text_content
+  subscription
+}
+
+enum OrderStatus {
+  pending
+  paid
+  delivered
+  failed
+  refunded
+  cancelled
+}
+
+enum PaymentMethod {
+  telegram_stars
+  telegram_provider
+  manual
+}
+
+enum AdminRole {
+  superadmin
+  moderator
+}
+
+enum DiscountType {
+  percentage
+  fixed_stars
+}
+
+enum ContentFormat {
+  plain
+  markdown
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+// ─── Models ─────────────────────────────────────────────────
+
+model User {
+  id           Int      @id @default(autoincrement())
+  telegramId   BigInt   @unique @map("telegram_id")
+  username     String?
+  fullName     String?  @map("full_name")
+  language     String   @default("sw") // "sw" = Kiswahili, "en" = English
+  referralCode String   @unique @map("referral_code")
+  referredBy   Int?     @map("referred_by")
+  isBlocked    Boolean  @default(false) @map("is_blocked")
+  starsEarned  Int      @default(0) @map("stars_earned") // commission from referrals
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  referrer     User?          @relation("Referrals", fields: [referredBy], references: [id])
+  referred     User[]         @relation("Referrals")
+  orders       Order[]
+  reviews      Review[]
+  tickets      SupportTicket[]
+  cartItems    CartItem[]
+  wishlist     WishlistItem[]
+
+  @@map("users")
+}
+
+model Admin {
+  id          Int       @id @default(autoincrement())
+  telegramId  BigInt    @unique @map("telegram_id")
+  username    String?
+  fullName    String?   @map("full_name")
+  role        AdminRole @default(moderator)
+  // JSON permissions example: {"can_edit_products": true, "can_view_orders": true}
+  permissions Json      @default("{}")
+  addedBy     Int?      @map("added_by") // admin who added this admin
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  auditLogs   AuditLog[]
+
+  @@map("admins")
+}
+
+model Category {
+  id        Int        @id @default(autoincrement())
+  name      String
+  nameEn    String?    @map("name_en") // English name
+  slug      String     @unique
+  parentId  Int?       @map("parent_id")
+  sortOrder Int        @default(0) @map("sort_order")
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children  Category[] @relation("SubCategories")
+  products  Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id                 Int           @id @default(autoincrement())
+  name               String
+  nameEn             String?       @map("name_en")
+  description        String        @db.Text
+  descriptionEn      String?       @db.Text @map("description_en")
+  price              Int           // display price in TZS
+  priceStars         Int           @map("price_stars") // actual charge in Telegram Stars
+  categoryId         Int           @map("category_id")
+  productType        ProductType   @default(file) @map("product_type")
+
+  // File product fields
+  filePath           String?       @map("file_path")
+  fileOriginalName   String?       @map("file_original_name")
+  fileTelegramId     String?       @map("file_telegram_id") // cached Telegram file_id
+  fileEncrypted      Boolean       @default(false) @map("file_encrypted")
+
+  // Text content product fields
+  previewDescription String?       @db.Text @map("preview_description")
+  features           Json?         // JSON array: ["✅ Feature 1", "✅ Feature 2"]
+  lockedContent      String?       @db.Text @map("locked_content") // NEVER exposed in previews!
+  contentFormat      ContentFormat @default(plain) @map("content_format")
+
+  // Thumbnail
+  thumbnailPath      String?       @map("thumbnail_path")
+  thumbnailFileId    String?       @map("thumbnail_file_id") // cached Telegram photo file_id
+
+  // Inventory
+  stock              Int?          // null = unlimited
+  salesCount         Int           @default(0) @map("sales_count")
+
+  // Status
+  isActive           Boolean       @default(true) @map("is_active")
+  isFeatured         Boolean       @default(false) @map("is_featured")
+
+  // Discount
+  discountStars      Int?          @map("discount_stars")
+  discountStartsAt   DateTime?     @map("discount_starts_at")
+  discountEndsAt     DateTime?     @map("discount_ends_at")
+
+  // Subscription fields
+  subscriptionDays   Int?          @map("subscription_days") // e.g., 30 for monthly
+
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  category           Category      @relation(fields: [categoryId], references: [id])
+  orderItems         OrderItem[]
+  reviews            Review[]
+  cartItems          CartItem[]
+  wishlistItems      WishlistItem[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@map("products")
+}
+
+model Order {
+  id               Int           @id @default(autoincrement())
+  userId           Int           @map("user_id")
+  totalStars       Int           @map("total_stars")
+  status           OrderStatus   @default(pending)
+  paymentMethod    PaymentMethod @default(telegram_stars) @map("payment_method")
+  paymentReference String?       @map("payment_reference") // Telegram charge ID
+  couponId         Int?          @map("coupon_id")
+  couponDiscount   Int?          @map("coupon_discount") // stars discounted
+  notes            String?
+  isFlagged        Boolean       @default(false) @map("is_flagged") // fraud flag
+  flagReason       String?       @map("flag_reason")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  paidAt           DateTime?     @map("paid_at")
+  deliveredAt      DateTime?     @map("delivered_at")
+
+  user             User          @relation(fields: [userId], references: [id])
+  coupon           Coupon?       @relation(fields: [couponId], references: [id])
+  items            OrderItem[]
+  payment          Payment?
+
+  @@index([userId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              Int     @id @default(autoincrement())
+  orderId         Int     @map("order_id")
+  productId       Int     @map("product_id")
+  starsAtPurchase Int     @map("stars_at_purchase")
+  priceAtPurchase Int     @map("price_at_purchase") // TZS display
+  quantity        Int     @default(1)
+  isDelivered     Boolean @default(false) @map("is_delivered")
+
+  order           Order   @relation(fields: [orderId], references: [id])
+  product         Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Payment {
+  id               Int      @id @default(autoincrement())
+  orderId          Int      @unique @map("order_id")
+  gateway          String   // "telegram_stars" | "telegram_provider" | "manual"
+  telegramChargeId String?  @map("telegram_charge_id")
+  providerChargeId String?  @map("provider_charge_id")
+  amount           Int      // amount in stars
+  currency         String   @default("XTR")
+  status           String   @default("pending") // pending|completed|failed|refunded
+  rawResponse      Json?    @map("raw_response") // full Telegram payment object
+  idempotencyKey   String?  @unique @map("idempotency_key") // prevent duplicate processing
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  order            Order    @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+model Coupon {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique
+  discountType  DiscountType @map("discount_type")
+  discountValue Int          @map("discount_value") // stars or percentage
+  usageLimit    Int?         @map("usage_limit")    // null = unlimited
+  usedCount     Int          @default(0) @map("used_count")
+  minStars      Int?         @map("min_stars")       // minimum order in stars
+  expiresAt     DateTime?    @map("expires_at")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  orders        Order[]
+
+  @@map("coupons")
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  productId Int      @map("product_id")
+  userId    Int      @map("user_id")
+  rating    Int      // 1-5
+  comment   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product   Product  @relation(fields: [productId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([productId, userId]) // one review per product per user
+  @@map("reviews")
+}
+
+model SupportTicket {
+  id         Int          @id @default(autoincrement())
+  userId     Int          @map("user_id")
+  subject    String
+  message    String       @db.Text
+  status     TicketStatus @default(open)
+  adminReply String?      @db.Text @map("admin_reply")
+  adminId    Int?         @map("admin_id")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@map("support_tickets")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  adminId   Int      @map("admin_id")
+  action    String   // e.g., "product.created", "order.confirmed", "user.blocked"
+  details   Json?    // extra context
+  createdAt DateTime @default(now()) @map("created_at")
+
+  admin     Admin    @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  productId Int      @map("product_id")
+  quantity  Int      @default(1)
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  user      User     @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("cart_items")
+}
+
+model WishlistItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  productId Int      @map("product_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  user      User     @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("wishlist_items")
+}
+
+// Key-value store for bot configuration
+model BotSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bot_settings")
+}
+
+// Subscription access tracking
+model UserSubscription {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  productId   Int       @map("product_id")
+  orderId     Int       @map("order_id")
+  startsAt    DateTime  @default(now()) @map("starts_at")
+  expiresAt   DateTime  @map("expires_at")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([userId, productId])
+  @@map("user_subscriptions")
+}
