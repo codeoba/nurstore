@@ -43,13 +43,13 @@ function formatProductCard(product, lang = 'sw') {
   if (activeDiscount) {
     text += `💰 *Bei:* ~~TZS ${product.priceTzs.toLocaleString('en-US')}~~ TZS *${tzs.toLocaleString('en-US')}*`
     if (usd) {
-      text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+      text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
     }
     text += `\n🔥 *Punguzo\\!*\n`
   } else {
     text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
     if (usd) {
-      text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+      text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
     }
     text += `\n`
   }
@@ -102,7 +102,7 @@ function formatTextProductPreview(product, lang = 'sw') {
 
   text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
   if (usd) {
-    text += ` \\(approx\\. $${usd.toFixed(2)}\\)`
+    text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
   }
   text += `\n\n🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
 
