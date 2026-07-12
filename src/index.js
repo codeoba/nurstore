@@ -332,6 +332,20 @@ async function main() {
     // Endelea hata kama jobs hazifanyi kazi
   }
 
+  // Weka commands za bot kwenye menyu ya Telegram
+  try {
+    await bot.telegram.setMyCommands([
+      { command: 'start', description: 'Fungua menyu kuu / Open Main Menu' },
+      { command: 'profile', description: 'Wasifu na Referral / Profile & Referrals' },
+      { command: 'myorders', description: 'Maagizo yangu / My Orders' },
+      { command: 'support', description: 'Wasiliana na msaada / Contact Support' },
+      { command: 'admin', description: 'Panel ya Wasimamizi / Admin Panel (Admins Only)' },
+    ])
+    logger.info('✅ Bot commands menu registered')
+  } catch (err) {
+    logger.warn('Failed to set bot commands menu', { error: err.message })
+  }
+
   // Anza bot kwa polling mode
   await bot.launch({
     allowedUpdates: [
