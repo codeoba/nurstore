@@ -105,6 +105,27 @@ async function deliverOrder(bot, telegramUserId, order) {
  * Tuma faili la bidhaa kwa mtumiaji
  */
 async function deliverFile(bot, telegramUserId, product, order) {
+  // Angalia kama filePath ni URL ya nje (Link)
+  const isUrl = product.filePath && (product.filePath.startsWith('http://') || product.filePath.startsWith('https://'))
+
+  if (isUrl) {
+    const text = `📁 *${escapeMarkdown(product.name)}*\n\n` +
+      `Bofya kiungo kifuatacho kupata au kupakua bidhaa yako:\n` +
+      `🔗 [Pakua Hapa](${escapeMarkdown(product.filePath)})\n\n` +
+      `_Order \\#${order.id}_`
+
+    const msg = await bot.telegram.sendMessage(telegramUserId, text, {
+      parse_mode: 'MarkdownV2',
+      disable_web_page_preview: false,
+    })
+
+    logger.info('File link delivered successfully', {
+      productId: product.id,
+      orderId: order.id,
+    })
+    return msg
+  }
+
   // Kama faili tayari lina Telegram file_id, tumia hiyo (ni haraka zaidi)
   if (product.fileTelegramId) {
     const msg = await bot.telegram.sendDocument(telegramUserId, product.fileTelegramId, {

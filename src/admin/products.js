@@ -490,24 +490,25 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'file_upload': {
-      if (!document) {
-        await ctx.reply('⚠️ Tafadhali tuma faili (Document). Siyo picha au ujumbe tu.')
+      if (document) {
+        const filename = document.file_name || 'upload'
+        data.fileTelegramId = document.file_id
+        data.fileOriginalName = filename
+        data.filePath = null
+      } else if (text && (text.startsWith('http://') || text.startsWith('https://') || text.includes('://'))) {
+        data.filePath = text
+        data.fileTelegramId = null
+        data.fileOriginalName = 'Kiungo cha Kupakua (URL Link)'
+      } else {
+        await ctx.reply('⚠️ Tafadhali pakia faili (Document) au andika kiungo cha faili (mfano: https://mega.nz/...)')
         return true
       }
-
-      const filename = document.file_name || 'upload'
-      if (!isAllowedFileType(filename)) {
-        await ctx.reply(`⚠️ Aina ya faili hii hairuhusiwi. Faili zinazoruhusiwa: PDF, ZIP, MP4, n.k.`)
-        return true
-      }
-
-      // Hifadhi Telegram file_id badala ya kupakua faili (bora zaidi)
-      data.fileTelegramId = document.file_id
-      data.fileOriginalName = filename
 
       wizard.step = 'thumbnail'
       await ctx.reply(
-        `✅ Faili limepokelewa: ${escapeMarkdown(filename)}\n\n*Hatua 7/7:* Pakia *picha ya bidhaa* \\(thumbnail\\):\n_Au andika "skip"_`,
+        `✅ ${data.filePath ? 'Kiungo cha faili kimepokelewa' : 'Faili limepokelewa'}\n\n` +
+        `*Hatua 7/7:* Pakia *picha ya bidhaa* \\(thumbnail\\):\n` +
+        `_Au andika "skip" kama hutaka picha_`,
         { parse_mode: 'MarkdownV2' }
       )
       return true
@@ -648,6 +649,7 @@ async function showProductConfirmation(ctx, wizard) {
     d.features ? `✅ Features: ${d.features.length}` : '',
     d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}\\.\\.\\.` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
+    (d.filePath && !d.fileTelegramId) ? `🔗 Kiungo: ${escapeMarkdown(d.filePath)}` : '',
     d.thumbnailFileId ? `🖼️ Picha: ✅` : `🖼️ Picha: ❌`,
     ``,
     `Andika *ndiyo* kuthibitisha au *hapana* kughairi:`,
