@@ -609,10 +609,16 @@ async function showMobileMoneyNetworks(ctx, productId, lang) {
   if (mm.halopesa) buttons.push([Markup.button.callback('🟢 HaloPesa',     `store:buy:mm:halopesa:${productId}`)])
 
   if (buttons.length === 0) {
-    await ctx.answerCbQuery(
-      lang === 'sw' ? '⚠️ Malipo ya Mobile Money hayapatikani kwa sasa.' : '⚠️ Mobile Money not configured yet.',
-      { show_alert: true }
-    )
+    const errorText = lang === 'sw' 
+      ? '⚠️ *Malipo ya Mobile Money hayapatikani kwa sasa\\.*\n\nTafadhali wasiliana na admin au tumia njia nyingine ya malipo\\.'
+      : '⚠️ *Mobile Money not configured yet\\.*\n\nPlease contact admin or use another payment method\\.'
+      
+    await ctx.editMessageText(errorText, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyuma' : '◀️ Back', `store:buy:${productId}`)]
+      ])
+    }).catch(e => logger.error('Error in showMobileMoneyNetworks (empty)', { error: e.message }))
     return
   }
 
@@ -625,7 +631,7 @@ async function showMobileMoneyNetworks(ctx, productId, lang) {
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
     ...Markup.inlineKeyboard(buttons)
-  }).catch(() => {})
+  }).catch(e => logger.error('Error in showMobileMoneyNetworks', { error: e.message }))
 }
 
 async function showMobileMoneyInstructions(ctx, userId, productId, network, lang) {
