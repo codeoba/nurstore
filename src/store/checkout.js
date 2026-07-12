@@ -449,15 +449,16 @@ async function handleCheckoutWizard(ctx) {
   if (wizard.scene === 'mobilemoney_proof' && wizard.step === 'screenshot') {
     const { orderId, productId, network, priceTzs } = wizard.data
 
-    // Accept picha au hati/document
+    // Accept picha au hati/document au text
     const photo = ctx.message?.photo
     const document = ctx.message?.document
+    const textMsg = ctx.message?.text
 
-    if (!photo && !document) {
+    if (!photo && !document && !textMsg) {
       await ctx.reply(
         lang === 'sw'
-          ? '⚠️ Tafadhali tuma *picha (screenshot)* ya muamala wako, si maandishi.'
-          : '⚠️ Please send a *screenshot image* of your transaction, not text.',
+          ? '⚠️ Tafadhali tuma picha (screenshot), au andika ID ya muamala wako.'
+          : '⚠️ Please send a screenshot image, or type your transaction ID.',
         { parse_mode: 'MarkdownV2' }
       )
       return true
@@ -499,11 +500,20 @@ async function handleCheckoutWizard(ctx) {
           reply_markup: inlineKeyboard
         }).catch(() => {})
       }
-    } else {
+    } else if (document) {
       // Tuma document kwa kila admin
       for (const adminId of require('../config').admin.ids) {
         await ctx.telegram.sendDocument(adminId, document.file_id, {
           caption,
+          parse_mode: 'MarkdownV2',
+          reply_markup: inlineKeyboard
+        }).catch(() => {})
+      }
+    } else if (textMsg) {
+      // Tuma text kwa kila admin
+      const msgCaption = `${caption}\n\n📝 *Ujumbe / ID ya Muamala:*\n\`${escapeMarkdown(textMsg)}\``
+      for (const adminId of require('../config').admin.ids) {
+        await ctx.telegram.sendMessage(adminId, msgCaption, {
           parse_mode: 'MarkdownV2',
           reply_markup: inlineKeyboard
         }).catch(() => {})
@@ -513,8 +523,8 @@ async function handleCheckoutWizard(ctx) {
     // Inform customer
     await ctx.reply(
       lang === 'sw'
-        ? `✅ *Screenshot Imepokelewa\\!*\n\nAsante\\! Malipo yako yanakaguliwa na wasimamizi\\. Utapokea bidhaa yako hapa mara malipo yatakapothibitishwa\\. Kwa kawaida inachukua dakika chache\\!`
-        : `✅ *Screenshot Received\\!*\n\nThank you\\! Your payment is being verified by our team\\. You will receive your product here as soon as it is confirmed\\. This usually takes a few minutes\\!`,
+        ? `✅ *Uthibitisho Umepokelewa\\!*\n\nAsante\\! Malipo yako yanakaguliwa na wasimamizi\\. Utapokea bidhaa yako hapa mara malipo yatakapothibitishwa\\. Kwa kawaida inachukua dakika chache\\!`
+        : `✅ *Proof Received\\!*\n\nThank you\\! Your payment is being verified by our team\\. You will receive your product here as soon as it is confirmed\\. This usually takes a few minutes\\!`,
       { parse_mode: 'MarkdownV2' }
     )
     return true
@@ -668,24 +678,47 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
       `1️⃣ Tuma kiasi cha *TZS ${price.toLocaleString('en-US')}* kwenda namba hii:\n` +
       `📞 Namba: \`${escapeMarkdown(number)}\`\n` +
       `👤 Jina: *${escapeMarkdown(ownerName)}*\n\n` +
-      `2️⃣ Baada ya kutuma, piga *screenshot* (picha) ya muamala ukionyesha umefanikiwa\\.\n\n` +
-      `3️⃣ Tuma picha hiyo hapa (reply kwenye chat hii) ili tuhakiki na kukutumia bidhaa yako\\.\n\n` +
-      `_Tunasubiri picha yako\\.\\.\\._`
+      `2️⃣ Baada ya kutuma, piga *screenshot* (picha) au nakili *ID ya muamala*\\.\n\n` +
+      `3️⃣ Tuma picha au meseji ya muamala hapa (reply kwenye chat hii) ili tuhakiki na kukutumia bidhaa yako\\.\n\n` +
+      `⏳ _Una dakika 12 pekee kukamilisha malipo na kutuma uthibitisho kabla oda yako kufutwa\\._`
     : `📱 *Pay via ${networkName}*\n\n` +
       `Please follow these steps to complete your purchase of *${escapeMarkdown(product.name)}*:\n\n` +
       `1️⃣ Send exactly *TZS ${price.toLocaleString('en-US')}* to this number:\n` +
       `📞 Number: \`${escapeMarkdown(number)}\`\n` +
       `👤 Name: *${escapeMarkdown(ownerName)}*\n\n` +
-      `2️⃣ Take a *screenshot* of the successful transaction\\.\n\n` +
-      `3️⃣ Send the screenshot here in this chat so we can verify and deliver your product\\.\n\n` +
-      `_Waiting for your screenshot\\.\\.\\._`
+      `2️⃣ Take a *screenshot* or copy the *transaction ID*\\.\n\n` +
+      `3️⃣ Send the screenshot or text here in this chat so we can verify and deliver your product\\.\n\n` +
+      `⏳ _You have 12 minutes to complete the payment and send proof before your order is cancelled\\._`
 
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
     ...Markup.inlineKeyboard([
       [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)]
     ])
-  })
+  }).catch(() => {})
+
+  // Weka Timeout ya dakika 12
+  setTimeout(async () => {
+    try {
+      const checkOrder = await prisma.order.findUnique({ where: { id: order.id } })
+      if (checkOrder && checkOrder.status === 'pending') {
+        // Cancel order
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'cancelled' }
+        })
+        
+        // Notify customer
+        const cancelMsg = lang === 'sw'
+          ? `⏳ *Muda Umeisha\\!*\n\nMuda wako wa dakika 12 wa kutuma uthibitisho kwa oda namba \\#${order.id} umeisha, hivyo oda imefutwa\\.\n\nKama ulishalipa au unahitaji kununua tena, tafadhali anza upya kisha utume uthibitisho wako mapema\\.`
+          : `⏳ *Time Expired\\!*\n\nYour 12 minutes to send proof for order \\#${order.id} has expired, so the order is cancelled\\.\n\nIf you already paid or want to try again, please restart the process and send your proof promptly\\.`
+          
+        await ctx.telegram.sendMessage(Number(userId), cancelMsg, { parse_mode: 'MarkdownV2' }).catch(() => {})
+      }
+    } catch (err) {
+      logger.error('Failed to auto-cancel mobile money order on timeout', { error: err.message, orderId: order.id })
+    }
+  }, 12 * 60 * 1000)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
