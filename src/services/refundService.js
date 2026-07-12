@@ -11,8 +11,8 @@ const logger = require('../utils/logger')
  * @param {number} orderId - ID ya order
  * @param {string} reason - Sababu ya kuomba refund
  */
-async function createRefundRequest(userId, orderId, reason) {
-  logger.info('Attempting to create refund request', { userId, orderId, reason })
+async function createRefundRequest(userId, orderId, reason, proofFileId = null, proofType = null) {
+  logger.info('Attempting to create refund request', { userId, orderId, reason, proofFileId, proofType })
 
   // 1. Hakikisha order ipo na inamilikiwa na mteja huyu na imelipiwa/delivered
   const order = await prisma.order.findFirst({
@@ -42,6 +42,8 @@ async function createRefundRequest(userId, orderId, reason) {
       orderId,
       reason,
       status: 'pending',
+      proofFileId,
+      proofType,
     },
     include: {
       order: {

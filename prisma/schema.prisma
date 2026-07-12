@@ -403,6 +403,8 @@ model RefundRequest {
   reason      String    @db.Text
   status      String    @default("pending") // pending | approved | rejected
   adminNotes  String?   @db.Text @map("admin_notes")
+  proofFileId String?   @map("proof_file_id")
+  proofType   String?   @map("proof_type")
   createdAt   DateTime  @default(now()) @map("created_at")
   resolvedAt  DateTime? @map("resolved_at")
 

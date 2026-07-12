@@ -9,10 +9,24 @@ const config = require('../config')
  * @param {object} bot - Telegraf bot instance
  * @param {string} message - Ujumbe wa kutuma
  */
-async function notifyAdmins(bot, message) {
+async function notifyAdmins(bot, message, extra = {}) {
+  // If bot is telegraf instance, extract telegram. Otherwise if bot is ctx.telegram, use it
+  const telegram = bot.telegram || bot;
   for (const adminId of config.admin.ids) {
     try {
-      await bot.telegram.sendMessage(adminId, message, { parse_mode: 'MarkdownV2' })
+      if (typeof message === 'object') {
+        if (message.photo) {
+          await telegram.sendPhoto(adminId, message.photo, { caption: message.caption, parse_mode: message.parse_mode || 'MarkdownV2', ...extra })
+        } else if (message.video) {
+          await telegram.sendVideo(adminId, message.video, { caption: message.caption, parse_mode: message.parse_mode || 'MarkdownV2', ...extra })
+        } else if (message.document) {
+          await telegram.sendDocument(adminId, message.document, { caption: message.caption, parse_mode: message.parse_mode || 'MarkdownV2', ...extra })
+        } else {
+          await telegram.sendMessage(adminId, message.text, { parse_mode: message.parse_mode || 'MarkdownV2', ...extra })
+        }
+      } else {
+        await telegram.sendMessage(adminId, message, { parse_mode: 'MarkdownV2', ...extra })
+      }
     } catch (err) {
       logger.error('Failed to notify admin', { adminId, error: err.message })
     }

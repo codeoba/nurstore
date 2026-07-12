@@ -134,9 +134,15 @@ function registerOrdersHandlers(bot) {
   })
 
   // ─── Refund Request Selection Menu ────────────────────────────
-  bot.action(/^store:refund:menu(:page:(\d+))?$/, async (ctx) => {
+  bot.action('store:refund:menu', async (ctx) => {
     await ctx.answerCbQuery()
-    const page = ctx.match[2] ? parseInt(ctx.match[2]) : 1
+    const lang = ctx.session?.language || 'sw'
+    await showRefundOrdersList(ctx, 1, lang)
+  })
+
+  bot.action(/^store:refund:menu:page:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const page = parseInt(ctx.match[1])
     const lang = ctx.session?.language || 'sw'
     await showRefundOrdersList(ctx, page, lang)
   })
@@ -363,67 +369,178 @@ module.exports = {
 
 async function handleRefundWizard(ctx) {
   const wizard = ctx.session?.userWizard
-  if (!wizard || wizard.scene !== 'refund' || wizard.step !== 'reason') return false
+  if (!wizard || wizard.scene !== 'refund') return false
 
   const lang = ctx.session?.language || 'sw'
-  const text = ctx.message?.text?.trim()
 
-  if (!text || text.length < 10) {
-    await ctx.reply(
-      lang === 'sw'
-        ? '⚠️ Sababu lazima iwe na maneno angalau herufi 10. Tafadhali andika sababu kamili:'
-        : '⚠️ Reason must be at least 10 characters long. Please write a full reason:'
-    )
-    return true
-  }
+  // Step 1: Input Order ID
+  if (wizard.step === 'order_id') {
+    const text = ctx.message?.text?.trim()
+    const orderId = parseInt(text)
 
-  ctx.session.userWizard = null
+    if (!orderId || isNaN(orderId)) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '⚠️ Tafadhali andika nambari sahihi ya order (Mfano: 123):'
+          : '⚠️ Please write a valid order number (Example: 123):'
+      )
+      return true
+    }
 
-  try {
+    // Verify order eligibility
     const user = await prisma.user.findUnique({
       where: { telegramId: BigInt(ctx.from.id) },
       select: { id: true }
     })
 
-    const { createRefundRequest } = require('../services/refundService')
-    const request = await createRefundRequest(user.id, wizard.data.orderId, text)
+    const order = await prisma.order.findFirst({
+      where: {
+        id: orderId,
+        userId: user.id,
+        status: { in: ['paid', 'delivered'] },
+        refundRequest: null,
+      }
+    })
+
+    if (!order) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '❌ Nambari ya order si sahihi au order hii haiwezi kuombewa refund. Tafadhali hakikisha umeingiza nambari sahihi kwenye orodha hapo juu:'
+          : '❌ Invalid order number or this order is not eligible for refund. Please ensure you type a correct order ID from the list:'
+      )
+      return true
+    }
+
+    // Save orderId, proceed to reason
+    wizard.data.orderId = orderId
+    wizard.step = 'reason_and_proof'
 
     await ctx.reply(
       lang === 'sw'
-        ? `✅ *Ombi la Refund Limetumwa\\!*\n\nOmbi lako limepokelewa na linakaguliwa na Wasimamizi\\. Utajulishwa hapa pindi litakapothibitishwa\\.`
-        : `✅ *Refund Request Sent\\!*\n\nYour request has been received and is being reviewed by the Admins\\. You will be notified here once it is resolved\\.`,
-      {
-        parse_mode: 'MarkdownV2',
-        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
-      }
+        ? `✍️ Tafadhali andika sababu za kuomba refund ya Order *#${orderId}*\\.\n\n_Unaweza pia kutuma picha, video, au faili yoyote ya ushahidi pamoja na sababu yako\\._`
+        : `✍️ Please write the reason for requesting a refund for Order *#${orderId}*\\.\n\n_You can also attach any proof (photo, video, or file) along with your message\\._`,
+      { parse_mode: 'MarkdownV2' }
     )
+    return true
+  }
 
-    // Notify admins with inline approval options
-    const { notifyAdmins } = require('../services/notificationService')
-    const usernameStr = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
-    await notifyAdmins(
-      ctx.telegram,
-      `🔄 *Ombi Jipya la Refund (Order #${request.orderId})*\n\n` +
-      `👤 Mteja: ${usernameStr}\n` +
-      `💰 Kiasi: TZS ${request.order.totalTzs.toLocaleString('en-US')}\n` +
-      `📝 Sababu: ${request.reason}\n`,
-      Markup.inlineKeyboard([
+  // Step 2: Reason and Proof
+  if (wizard.step === 'reason_and_proof') {
+    const text = ctx.message?.text?.trim() || ctx.message?.caption?.trim()
+    const photo = ctx.message?.photo
+    const video = ctx.message?.video
+    const doc = ctx.message?.document
+
+    // Check if they uploaded media and we don't have proof file yet
+    if ((photo || video || doc) && !wizard.data.proofFileId) {
+      let fileId = ''
+      let fileType = ''
+
+      if (photo && photo.length > 0) {
+        fileId = photo[photo.length - 1].file_id
+        fileType = 'photo'
+      } else if (video) {
+        fileId = video.file_id
+        fileType = 'video'
+      } else if (doc) {
+        fileId = doc.file_id
+        fileType = 'document'
+      }
+
+      wizard.data.proofFileId = fileId
+      wizard.data.proofType = fileType
+    }
+
+    // If reason is not provided yet (neither text nor caption was sent)
+    if (!text) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '✍️ Ushahidi umepokelewa\\. Tafadhali andika sababu za kuomba refund ya order hii:'
+          : '✍️ Proof received\\. Please write the reason for requesting a refund for this order:'
+      )
+      return true
+    }
+
+    if (text.length < 10) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '⚠️ Sababu lazima iwe na angalau herufi 10. Tafadhali andika sababu kamili:'
+          : '⚠️ Reason must be at least 10 characters long. Please write a full reason:'
+      )
+      return true
+    }
+
+    // Create the refund request!
+    ctx.session.userWizard = null
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { telegramId: BigInt(ctx.from.id) },
+        select: { id: true }
+      })
+
+      const { createRefundRequest } = require('../services/refundService')
+      const request = await createRefundRequest(
+        user.id,
+        wizard.data.orderId,
+        text,
+        wizard.data.proofFileId || null,
+        wizard.data.proofType || null
+      )
+
+      await ctx.reply(
+        lang === 'sw'
+          ? `✅ *Ombi la Refund Limetumwa\\!*\n\nOmbi lako limepokelewa na linakaguliwa na Wasimamizi\\. Utajulishwa hapa pindi litakapothibitishwa\\.`
+          : `✅ *Refund Request Sent\\!*\n\nYour request has been received and is being reviewed by the Admins\\. You will be notified here once it is resolved\\.`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+        }
+      )
+
+      // Notify admins
+      const { notifyAdmins } = require('../services/notificationService')
+      const usernameStr = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
+      
+      const adminMsgText = 
+        `🔄 *Ombi Jipya la Refund (Order #${request.orderId})*\n\n` +
+        `👤 Mteja: ${usernameStr}\n` +
+        `💰 Kiasi: TZS ${request.order.totalTzs.toLocaleString('en-US')}\n` +
+        `📝 Sababu: ${request.reason}\n` +
+        (request.proofFileId ? `📁 Ushahidi: Umeambatishwa\\.` : '')
+
+      const adminKeyboard = Markup.inlineKeyboard([
         [
           Markup.button.callback('✅ Kubali (Approve)', `admin:refund:approve:${request.id}`),
           Markup.button.callback('❌ Kataa (Reject)', `admin:refund:reject:${request.id}`),
         ]
       ])
-    ).catch(() => {})
 
-  } catch (err) {
-    await ctx.reply(
-      lang === 'sw'
-        ? `❌ Hitilafu ya kutuma ombi: ${err.message}`
-        : `❌ Error sending request: ${err.message}`
-    )
+      // If there is a proof file, send it as media to admins!
+      if (request.proofFileId) {
+        if (request.proofType === 'photo') {
+          await notifyAdmins(ctx.telegram, { photo: request.proofFileId, caption: adminMsgText }, adminKeyboard).catch(() => {})
+        } else if (request.proofType === 'video') {
+          await notifyAdmins(ctx.telegram, { video: request.proofFileId, caption: adminMsgText }, adminKeyboard).catch(() => {})
+        } else {
+          await notifyAdmins(ctx.telegram, { document: request.proofFileId, caption: adminMsgText }, adminKeyboard).catch(() => {})
+        }
+      } else {
+        await notifyAdmins(ctx.telegram, adminMsgText, adminKeyboard).catch(() => {})
+      }
+
+    } catch (err) {
+      await ctx.reply(
+        lang === 'sw'
+          ? `❌ Hitilafu ya kutuma ombi: ${err.message}`
+          : `❌ Error sending request: ${err.message}`
+      )
+    }
+
+    return true
   }
 
-  return true
+  return false
 }
 
 async function showRefundOrdersList(ctx, page = 1, lang = 'sw') {
@@ -463,40 +580,66 @@ async function showRefundOrdersList(ctx, page = 1, lang = 'sw') {
 
   if (orders.length === 0) {
     const text = lang === 'sw'
-      ? '🔄 *Hakuna maagizo yanayoweza kuombewa refund kwa sasa\\.*'
-      : '🔄 *No orders eligible for refund at this time\\.*'
-    await ctx.editMessageText(text, {
-      parse_mode: 'MarkdownV2',
-      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')]])
-    })
+      ? '❌ *Huna sifa za kuomba refund kwasababu hakuna order au manunuzi uliyofanya kwetu\\.*'
+      : '❌ *You do not qualify for a refund because there are no orders or purchases made with us\\.*'
+    
+    // Clear wizard just in case
+    ctx.session.userWizard = null
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')]])
+      })
+    } else {
+      await ctx.reply(text, {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')]])
+      })
+    }
     return
   }
 
-  const title = lang === 'sw'
-    ? `🔄 *Chagua Order ya kuomba Refund:*`
-    : `🔄 *Select Order for Refund Request:*`
+  // Set the wizard state
+  ctx.session.userWizard = {
+    scene: 'refund',
+    step: 'order_id',
+    data: {}
+  }
 
-  const buttons = orders.map(o => {
-    const itemsStr = o.items.map(i => i.product.name).join(', ').substring(0, 20)
-    return [
-      Markup.button.callback(
-        `#${o.id} — TZS ${o.totalTzs.toLocaleString('en-US')} (${itemsStr})`,
-        `store:refund:start:${o.id}`
-      )
-    ]
-  })
+  let text = lang === 'sw'
+    ? `🔄 *Maagizo Yako Yanayokubalika kwa Refund:*`
+    : `🔄 *Your Eligible Orders for Refund:*`
+
+  text += '\n\n'
+  for (const o of orders) {
+    const itemsStr = o.items.map(i => i.product.name).join(', ').substring(0, 30)
+    text += `• *Order #${o.id}* — TZS ${o.totalTzs.toLocaleString('en-US')} _(${escapeMarkdown(itemsStr)})_\n`
+  }
+
+  text += lang === 'sw'
+    ? `\n✍️ *Tafadhali andika nambari (ID) ya order unayotaka kuomba refund:*`
+    : `\n✍️ *Please write the order number (ID) you want to request a refund for:*`
 
   // Navigation row
+  const buttons = []
   const nav = []
   const totalPages = Math.ceil(total / limit)
   if (page > 1) nav.push(Markup.button.callback('◀️', `store:refund:menu:page:${page - 1}`))
   if (page < totalPages) nav.push(Markup.button.callback('▶️', `store:refund:menu:page:${page + 1}`))
   if (nav.length) buttons.push(nav)
 
-  buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')])
+  buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Nyumbani' : '◀️ Home', 'store:menu')])
 
-  await ctx.editMessageText(title, {
-    parse_mode: 'MarkdownV2',
-    ...Markup.inlineKeyboard(buttons),
-  })
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard(buttons),
+    })
+  } else {
+    await ctx.reply(text, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard(buttons),
+    })
+  }
 }

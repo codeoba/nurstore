@@ -6,6 +6,7 @@ const { getOrCreateWallet, getTransactions, creditWallet } = require('../service
 const { sendDepositInvoice } = require('../payments/telegramPayments')
 const { createBinanceOrder, queryBinanceOrder } = require('../payments/binancePay')
 const { escapeMarkdown } = require('../utils/formatting')
+const config = require('../config')
 const logger = require('../utils/logger')
 
 function registerWalletHandlers(bot) {

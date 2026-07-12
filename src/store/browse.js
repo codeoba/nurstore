@@ -128,9 +128,15 @@ function registerBrowseHandlers(bot) {
   })
 
   // ─── Pre-Orders Router ────────────────────────────────────────
-  bot.action(/^store:preorders(:page:(\d+))?$/, async (ctx) => {
+  bot.action('store:preorders', async (ctx) => {
     await ctx.answerCbQuery()
-    const page = ctx.match[2] ? parseInt(ctx.match[2]) : 1
+    const lang = ctx.session?.language || 'sw'
+    await showPreOrdersList(ctx, 1, lang)
+  })
+
+  bot.action(/^store:preorders:page:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const page = parseInt(ctx.match[1])
     const lang = ctx.session?.language || 'sw'
     await showPreOrdersList(ctx, page, lang)
   })
