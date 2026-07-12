@@ -176,24 +176,103 @@ function registerAdminProductHandlers(bot) {
   // Add Category
   bot.action('admin:categories', isAdmin, async (ctx) => {
     await ctx.answerCbQuery()
+    const { getCategories } = require('../services/productService')
     const cats = await getCategories()
 
-    let text = '📂 *Categories:*\n\n'
+    let text = '📂 *Usimamizi wa Categories:*\n\n'
     if (cats.length === 0) {
-      text += '_Hakuna categories bado_\n'
+      text += '_Hakuna categories bado\\._\n'
     } else {
-      cats.forEach(c => {
-        text += `• ${escapeMarkdown(c.name)} \\(${c._count.products} bidhaa\\)\n`
-      })
+      text += '_Categories zenye bidhaa 0 zinaweza kufutwa kiotomatiki\\._\n'
     }
+
+    const keyboardButtons = []
+    cats.forEach(c => {
+      const row = [
+        Markup.button.callback(`${c.name} (${c._count.products})`, `admin:category:view:${c.id}`)
+      ]
+      if (c._count.products === 0) {
+        row.push(Markup.button.callback('🗑️ Futa', `admin:category:delete:${c.id}`))
+      }
+      keyboardButtons.push(row)
+    })
+
+    keyboardButtons.push([
+      Markup.button.callback('➕ Ongeza Category', 'admin:category:add'),
+      Markup.button.callback('◀️ Rudi', 'admin:products')
+    ])
 
     await ctx.editMessageText(text, {
       parse_mode: 'MarkdownV2',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Ongeza Category', 'admin:category:add')],
-        [Markup.button.callback('◀️ Rudi', 'admin:products')],
-      ]),
+      ...Markup.inlineKeyboard(keyboardButtons),
     })
+  })
+
+  bot.action(/^admin:category:view:(\d+)$/, isAdmin, async (ctx) => {
+    await ctx.answerCbQuery()
+  })
+
+  bot.action(/^admin:category:delete:(\d+)$/, isAdmin, async (ctx) => {
+    const catId = parseInt(ctx.match[1])
+    const { prisma } = require('../database')
+
+    try {
+      const cat = await prisma.category.findUnique({
+        where: { id: catId },
+        include: { _count: { select: { products: true } } }
+      })
+
+      if (!cat) {
+        await ctx.answerCbQuery('❌ Category haipatikani.', { show_alert: true })
+        return
+      }
+
+      if (cat._count.products > 0) {
+        await ctx.answerCbQuery(`❌ Category hii ina bidhaa ${cat._count.products} na haiwezi kufutwa.`, { show_alert: true })
+        return
+      }
+
+      await prisma.category.delete({ where: { id: catId } })
+      await ctx.answerCbQuery('✅ Category imefutwa!', { show_alert: true })
+
+      // Refresh list
+      const cats = await prisma.category.findMany({
+        orderBy: { sortOrder: 'asc' },
+        include: { _count: { select: { products: true } } }
+      })
+
+      let text = '📂 *Usimamizi wa Categories:*\n\n'
+      if (cats.length === 0) {
+        text += '_Hakuna categories bado\\._\n'
+      } else {
+        text += '_Categories zenye bidhaa 0 zinaweza kufutwa kiotomatiki\\._\n'
+      }
+
+      const keyboardButtons = []
+      cats.forEach(c => {
+        const row = [
+          Markup.button.callback(`${c.name} (${c._count.products})`, `admin:category:view:${c.id}`)
+        ]
+        if (c._count.products === 0) {
+          row.push(Markup.button.callback('🗑️ Futa', `admin:category:delete:${c.id}`))
+        }
+        keyboardButtons.push(row)
+      })
+
+      keyboardButtons.push([
+        Markup.button.callback('➕ Ongeza Category', 'admin:category:add'),
+        Markup.button.callback('◀️ Rudi', 'admin:products')
+      ])
+
+      await ctx.editMessageText(text, {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard(keyboardButtons),
+      })
+
+    } catch (err) {
+      logger.error('Failed to delete category', { error: err.message, catId })
+      await ctx.reply(`❌ Hitilafu: ${err.message}`)
+    }
   })
 
   bot.action('admin:category:add', isAdmin, async (ctx) => {
