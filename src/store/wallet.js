@@ -16,6 +16,69 @@ function registerWalletHandlers(bot) {
     await showWalletMenu(ctx)
   })
 
+  // ─── Transaction History ──────────────────────────────────────
+  bot.action('store:wallet:transactions', async (ctx) => {
+    await ctx.answerCbQuery()
+    const lang = ctx.session?.language || 'sw'
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true },
+    })
+
+    if (!user) return
+
+    const txs = await getTransactions(user.id, 10) // Pata mwisho 10
+    const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
+
+    let text = lang === 'sw' ? `📜 *Historia ya Miamala*\n\n` : `📜 *Transaction History*\n\n`
+
+    if (txs.length === 0) {
+      text += lang === 'sw' ? '_Hakuna miamala bado\\._\n' : '_No transactions yet\\._\n'
+    } else {
+      for (const t of txs) {
+        const amtUsd = t.amount / usdRate
+        const sign = t.amount > 0 ? '+' : '-'
+        const absAmtUsd = Math.abs(amtUsd)
+        
+        let typeEmoji = '➕'
+        let details = ''
+
+        if (t.type === 'purchase') {
+          typeEmoji = '🛒'
+          let prodName = ''
+          if (t.metadata) {
+            try {
+              const meta = typeof t.metadata === 'string' ? JSON.parse(t.metadata) : t.metadata
+              prodName = meta.productName || meta.name || ''
+            } catch (e) {}
+          }
+          details = ` — Order \\#${t.referenceId || 'N/A'}${prodName ? `: ${escapeMarkdown(prodName)}` : ''}`
+        } else if (t.type === 'refund') {
+          typeEmoji = '↩️'
+          details = ` — Refund for Order \\#${t.referenceId || 'N/A'}`
+        } else if (t.type === 'referral_commission') {
+          typeEmoji = '👥'
+          details = ` — Referral commission`
+        } else {
+          // Deposit
+          typeEmoji = '➕'
+          details = ` — Binance Pay top\\-up`
+        }
+
+        const dateStr = t.createdAt.toISOString().split('T')[0] // YYYY-MM-DD
+        
+        text += `${typeEmoji} ${sign}$${escapeMarkdown(absAmtUsd.toFixed(2))}${details}\n`
+        text += `_${escapeMarkdown(dateStr)}_\n\n`
+      }
+    }
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:wallet')],
+    ])
+
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  })
+
   // ─── Deposit Selection ────────────────────────────────────────
   bot.action('store:wallet:deposit_init', async (ctx) => {
     await ctx.answerCbQuery()
@@ -256,37 +319,23 @@ async function showWalletMenu(ctx) {
   if (!user) return
 
   const wallet = await getOrCreateWallet(user.id)
-  const txs = await getTransactions(user.id, 5)
+  const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
+  const balanceUsd = wallet.balance / usdRate
 
-  let text = lang === 'sw'
-    ? `💳 *Wallet Yangu ya TZS*\n\n` +
-      `Salio la sasa: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
-      `📜 *Historia ya Miamala \\(Mwisho 5\\):*\n`
-    : `💳 *My TZS Wallet*\n\n` +
-      `Current Balance: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
-      `📜 *Transaction History \\(Last 5\\):*\n`
-
-  if (txs.length === 0) {
-    text += lang === 'sw' ? '_Hakuna miamala bado\\._\n' : '_No transactions yet\\._\n'
-  } else {
-    const typeNames = {
-      deposit: lang === 'sw' ? 'Salio' : 'Deposit',
-      purchase: lang === 'sw' ? 'Ununuzi' : 'Purchase',
-      refund: lang === 'sw' ? 'Refund' : 'Refund',
-      referral_commission: lang === 'sw' ? 'Komisheni' : 'Commission',
-    }
-
-    for (const t of txs) {
-      const type = typeNames[t.type] || t.type
-      const sign = t.amount > 0 ? '➕' : '➖'
-      const date = t.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      text += `• \`${escapeMarkdown(date)}\` — ${escapeMarkdown(type)}: *${sign} TZS ${Math.abs(t.amount).toLocaleString('en-US')}*\n`
-    }
-  }
+  const text = lang === 'sw'
+    ? `💰 *Wallet Yangu*\n\n` +
+      `💵 *Salio:* TZS *${wallet.balance.toLocaleString('en-US')}* \\(approx\\. $${escapeMarkdown(balanceUsd.toFixed(2))}\\)\n\n` +
+      `Chagua hatua:`
+    : `💰 *Your Wallet*\n\n` +
+      `💵 *Balance:* TZS *${wallet.balance.toLocaleString('en-US')}* \\(approx\\. $${escapeMarkdown(balanceUsd.toFixed(2))}\\)\n\n` +
+      `Choose an action:`
 
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback(lang === 'sw' ? '➕ Weka Salio (Top Up)' : '➕ Top Up Balance', 'store:wallet:deposit_init'),
+      Markup.button.callback(lang === 'sw' ? '💳 Weka Salio (Top Up)' : '💳 Top Up Wallet', 'store:wallet:deposit_init'),
+    ],
+    [
+      Markup.button.callback(lang === 'sw' ? '📜 Miamala (Transactions)' : '📜 Transactions', 'store:wallet:transactions'),
     ],
     [
       Markup.button.callback(lang === 'sw' ? '◀️ Wasifu' : '◀️ Back to Profile', 'store:profile'),
