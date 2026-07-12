@@ -468,7 +468,7 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       data.isVipOnly = (text?.toLowerCase() === 'ndiyo' || text?.toLowerCase() === 'yes')
       wizard.step = 'pre_order'
       await ctx.reply(
-        `❓ Je, hii ni Pre-Order (mteja kulipia kabla bidhaa haijawa rasmi)?\n\n` +
+        `❓ Je, hii ni Pre\\-Order \\(mteja kulipia kabla bidhaa haijawa rasmi\\)?\n\n` +
         `Andika *ndiyo* au *hapana*:`,
         { parse_mode: 'MarkdownV2' }
       )
@@ -536,12 +536,12 @@ async function showProductConfirmation(ctx, wizard) {
     ``,
     `📦 Jina: *${escapeMarkdown(d.name)}*`,
     `📝 Aina: ${typeIcons[d.productType]} ${d.productType}`,
-    `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} (approx. $${d.priceUsd.toFixed(2)})`,
+    `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} \\(approx\\. $${d.priceUsd.toFixed(2)}\\)`,
     `📊 Stock: ${d.stock === null ? 'Unlimited' : d.stock}`,
     `👑 VIP Only: ${d.isVipOnly ? 'Ndiyo ✅' : 'Hapana ❌'}`,
-    `🔜 Pre-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
+    `🔜 Pre\\-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
-    d.lockedContent ? `🔒 Maudhui ya siri: ${d.lockedContent.substring(0, 50)}...` : '',
+    d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}...` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
     d.thumbnailFileId ? `🖼️ Picha: ✅` : `🖼️ Picha: ❌`,
     ``,
