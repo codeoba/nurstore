@@ -251,6 +251,120 @@ function registerAdminRouter(bot) {
       await ctx.reply(`❌ Hitilafu: ${err.message}`)
     }
   })
+
+  // ─── Mobile Money Checkout Approval/Rejection ──────────────────
+  bot.action(/^admin:mobilemoney:(approve|reject):(\d+)$/, isAdmin, async (ctx) => {
+    const action = ctx.match[1]
+    const orderId = parseInt(ctx.match[2])
+
+    await ctx.answerCbQuery(action === 'approve' ? '✅ Inakagua na kutuma bidhaa...' : '❌ Inakataa...')
+
+    try {
+      const { deliverOrder } = require('../services/deliveryService')
+
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          user: { select: { telegramId: true, language: true, id: true } },
+          items: { include: { product: true } },
+        },
+      })
+
+      if (!order) {
+        await ctx.editMessageText('❌ Order haikupatikana.', { parse_mode: 'MarkdownV2' })
+        return
+      }
+
+      if (order.status !== 'pending') {
+        await ctx.editMessageText(
+          `⚠️ *Order hii tayari imeshughulikiwa\\.*\n\nHali ya sasa: *${escapeMarkdown(order.status)}*`,
+          { parse_mode: 'MarkdownV2' }
+        )
+        return
+      }
+
+      const adminName = escapeMarkdown(ctx.from.first_name || 'Admin')
+      const lang = order.user.language || 'sw'
+      const productNames = order.items.map(i => i.product.name).join(', ')
+
+      if (action === 'approve') {
+        // Sasisha order status → paid
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { status: 'paid', paidAt: new Date(), paymentReference: 'mobilemoney_manual' },
+        })
+
+        // Tuma bidhaa kwa mteja mara moja
+        const updatedOrder = await prisma.order.findUnique({
+          where: { id: orderId },
+          include: { items: { include: { product: true } }, user: true },
+        })
+        await deliverOrder(ctx.telegram, Number(order.user.telegramId), updatedOrder)
+
+        // Ripoti admin
+        await ctx.editMessageText(
+          `✅ *Malipo YAMEIDHINISHWA na Bidhaa Imetumwa\\!*\n\n` +
+          `📦 Bidhaa: *${escapeMarkdown(productNames)}*\n` +
+          `💰 Kiasi: TZS *${order.totalTzs.toLocaleString('en-US')}*\n` +
+          `👨‍💼 Imeidhinishwa na: ${adminName}\n\n` +
+          `_Mteja amepokea bidhaa kiotomatiki\\._`,
+          { parse_mode: 'MarkdownV2' }
+        )
+
+        // Notify customer with thank you
+        const thankMsg = lang === 'sw'
+          ? `🎉 *Ununuzi Umekamilika\\!*\n\n` +
+            `Malipo yako kwa *${escapeMarkdown(productNames)}* yamethibitishwa\\.\n` +
+            `Bidhaa yako imetumwa hapa kwenye chat hii\\.\n\n` +
+            `Asante kwa kununua\\! 🙏`
+          : `🎉 *Purchase Completed\\!*\n\n` +
+            `Your payment for *${escapeMarkdown(productNames)}* has been confirmed\\.\n` +
+            `Your product has been delivered in this chat\\.\n\n` +
+            `Thank you for your purchase\\! 🙏`
+
+        await ctx.telegram.sendMessage(
+          Number(order.user.telegramId), thankMsg,
+          {
+            parse_mode: 'MarkdownV2',
+            reply_markup: {
+              inline_keyboard: [[{ text: '📦 Maagizo Yangu', callback_data: 'store:orders' }]]
+            }
+          }
+        ).catch(() => {})
+
+      } else {
+        // Kataa — futa order
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { status: 'cancelled' },
+        })
+
+        // Ripoti admin
+        await ctx.editMessageText(
+          `❌ *Malipo YAMEKATALIWA\\.*\n\n` +
+          `📦 Bidhaa: *${escapeMarkdown(productNames)}*\n` +
+          `💰 Kiasi: TZS *${order.totalTzs.toLocaleString('en-US')}*\n` +
+          `👨‍💼 Imekataliwa na: ${adminName}`,
+          { parse_mode: 'MarkdownV2' }
+        )
+
+        // Notify customer
+        const rejectMsg = lang === 'sw'
+          ? `❌ *Malipo Hayakuthibitishwa\\.*\n\n` +
+            `Ombi lako la kununua *${escapeMarkdown(productNames)}* haukuthibitishwa\\.\n\n` +
+            `Tafadhali hakikisha umetuma pesa sahihi kwa nambari sahihi kisha tuma screenshot tena, au wasiliana na msaada wetu\\.`
+          : `❌ *Payment Not Confirmed\\.*\n\n` +
+            `Your payment for *${escapeMarkdown(productNames)}* could not be confirmed\\.\n\n` +
+            `Please ensure you sent the correct amount to the correct number and try again, or contact our support team\\.`
+
+        await ctx.telegram.sendMessage(Number(order.user.telegramId), rejectMsg, { parse_mode: 'MarkdownV2' }).catch(() => {})
+      }
+
+    } catch (err) {
+      logger.error('Failed to process mobile money approval', { error: err.message, orderId })
+      await ctx.reply(`❌ Hitilafu: ${err.message}`)
+    }
+  })
 }
 
 

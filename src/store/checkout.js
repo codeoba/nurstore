@@ -99,6 +99,25 @@ function registerCheckoutHandlers(bot) {
       )]])
     )
   })
+
+  // ─── Mobile Money Network Selection ───────────────────────────
+  bot.action(/^store:buy:mobilemoney:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const productId = parseInt(ctx.match[1])
+    const lang = ctx.session?.language || 'sw'
+    await showMobileMoneyNetworks(ctx, productId, lang)
+  })
+
+  // ─── Mobile Money Network Chosen (show instructions) ────────────────
+  bot.action(/^store:buy:mm:(mpesa|airtel|mix|halopesa):(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const network = ctx.match[1]
+    const productId = parseInt(ctx.match[2])
+    const lang = ctx.session?.language || 'sw'
+    const user = await getDbUser(ctx.from.id)
+    if (!user) return
+    await showMobileMoneyInstructions(ctx, user.id, productId, network, lang)
+  })
 }
 
 // ─── Checkout Processors ──────────────────────────────────────
@@ -387,9 +406,11 @@ async function initDirectCheckout(ctx, userId, productId, lang) {
 
   ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId } }
 
+  const wallet = await getOrCreateWallet(userId)
+
   const text = lang === 'sw'
-    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nJe, unataka kuendelea kulipia kupitia salio la Wallet yako?`
-    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nDo you want to proceed with paying from your Wallet balance?`
+    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChagua njia ya malipo:`
+    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChoose payment method:`
 
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
@@ -408,11 +429,89 @@ async function initDirectCheckout(ctx, userId, productId, lang) {
 async function handleCheckoutWizard(ctx) {
   const wizard = ctx.session?.userWizard
   if (!wizard) return false
+
+  const lang = ctx.session?.language || 'sw'
+
+  // ─── Mobile Money Screenshot Handler ───────────────────────
+  if (wizard.scene === 'mobilemoney_proof' && wizard.step === 'screenshot') {
+    const { orderId, productId, network, priceTzs } = wizard.data
+
+    // Accept picha au hati/document
+    const photo = ctx.message?.photo
+    const document = ctx.message?.document
+
+    if (!photo && !document) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '⚠️ Tafadhali tuma *picha (screenshot)* ya muamala wako, si maandishi.'
+          : '⚠️ Please send a *screenshot image* of your transaction, not text.',
+        { parse_mode: 'MarkdownV2' }
+      )
+      return true
+    }
+
+    ctx.session.userWizard = null
+
+    // Notify admins with screenshot + approve/reject buttons
+    const clientName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : ctx.from.first_name || String(ctx.from.id)
+
+    const networkNames = { mpesa: 'M-Pesa', airtel: 'Airtel Money', mix: 'Mix by Yas', halopesa: 'HaloPesa' }
+    const networkLabel = networkNames[network] || network
+
+    const caption =
+      `📱 *Ombi la Malipo ya Mobile Money\\!*\n\n` +
+      `👤 Mteja: ${escapeMarkdown(clientName)} \\(ID: \`${ctx.from.id}\`\\)\n` +
+      `💰 Kiasi: TZS *${priceTzs.toLocaleString('en-US')}*\n` +
+      `⚙️ Mtandao: *${escapeMarkdown(networkLabel)}*\n` +
+      `📦 Order ID: *\\#${orderId}*\n\n` +
+      `_Hakikisha Transaction ID kwenye screenshot kabla ya kuidhinisha\._`
+
+    const { notifyAdmins } = require('../services/notificationService')
+    const inlineKeyboard = {
+      inline_keyboard: [[
+        { text: '✅ Kubali na Tuma Bidhaa', callback_data: `admin:mobilemoney:approve:${orderId}` },
+        { text: '❌ Kataa', callback_data: `admin:mobilemoney:reject:${orderId}` },
+      ]]
+    }
+
+    if (photo) {
+      // Tuma picha kwa kila admin
+      const fileId = photo[photo.length - 1].file_id
+      for (const adminId of require('../config').admin.ids) {
+        await ctx.telegram.sendPhoto(adminId, fileId, {
+          caption,
+          parse_mode: 'MarkdownV2',
+          reply_markup: inlineKeyboard
+        }).catch(() => {})
+      }
+    } else {
+      // Tuma document kwa kila admin
+      for (const adminId of require('../config').admin.ids) {
+        await ctx.telegram.sendDocument(adminId, document.file_id, {
+          caption,
+          parse_mode: 'MarkdownV2',
+          reply_markup: inlineKeyboard
+        }).catch(() => {})
+      }
+    }
+
+    // Inform customer
+    await ctx.reply(
+      lang === 'sw'
+        ? `✅ *Screenshot Imepokelewa\\!*\n\nAsante\\! Malipo yako yanakaguliwa na wasimamizi\\. Utapokea bidhaa yako hapa mara malipo yatakapothibitishwa\\. Kwa kawaida inachukua dakika chache\\!`
+        : `✅ *Screenshot Received\\!*\n\nThank you\\! Your payment is being verified by our team\\. You will receive your product here as soon as it is confirmed\\. This usually takes a few minutes\\!`,
+      { parse_mode: 'MarkdownV2' }
+    )
+    return true
+  }
+
+  // ─── Coupon Input Handler (original) ───────────────────────────────
   if (!['checkout', 'directBuyCoupon'].includes(wizard.scene)) return false
   if (wizard.step !== 'coupon_input') return false
 
   const code = ctx.message?.text?.trim().toUpperCase()
-  const lang = ctx.session?.language || 'sw'
 
   if (!code) {
     await ctx.reply(lang === 'sw' ? '⚠️ Ingiza code ya coupon.' : '⚠️ Enter a coupon code.')

@@ -77,6 +77,13 @@ const config = {
       trc20Address: optional('USDT_TRC20_ADDRESS', 'TYt9SJtz3cJhnq5wgEe3N9H7fa48GvKhx5'),
       bep20Address: optional('USDT_BEP20_ADDRESS', '0x0bacd562860a87f8fc54be1dec52fba6c47f7ed2'),
     },
+    mobileMoney: {
+      mpesa:    optional('MPESA_NUMBER',    ''),
+      airtel:   optional('AIRTEL_NUMBER',   ''),
+      mix:      optional('MIX_NUMBER',      ''),
+      halopesa: optional('HALOPESA_NUMBER', ''),
+      name:     optional('STORE_OWNER_NAME', 'Duka'),
+    },
   },
 
   // VIP Settings
