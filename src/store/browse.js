@@ -454,8 +454,8 @@ async function showPreOrdersList(ctx, page = 1, lang = 'sw') {
 
   if (result.products.length === 0) {
     const text = lang === 'sw'
-      ? '🔜 *Hakuna Oda za Mapema (Pre-Orders) kwa sasa\\.*'
-      : '🔜 *No Pre-Orders available at this time\\.*'
+      ? '🔜 *Hakuna Oda za Mapema \\(Pre\\-Orders\\) kwa sasa\\.*'
+      : '🔜 *No Pre\\-Orders available at this time\\.*'
     await ctx.editMessageText(text, {
       parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Nyumbani' : '◀️ Home', 'store:menu')]])
@@ -464,8 +464,8 @@ async function showPreOrdersList(ctx, page = 1, lang = 'sw') {
   }
 
   const title = lang === 'sw'
-    ? `🔜 *Oda za Mapema (Pre-Orders) \\(${result.total}\\):*`
-    : `🔜 *Pre-Orders Available \\(${result.total}\\):*`
+    ? `🔜 *Oda za Mapema \\(Pre\\-Orders\\) \\(${result.total}\\):*`
+    : `🔜 *Pre\\-Orders Available \\(${result.total}\\):*`
 
   const buttons = result.products.map(p => {
     const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
