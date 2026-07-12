@@ -416,10 +416,23 @@ async function initDirectCheckout(ctx, userId, productId, lang) {
     parse_mode: 'MarkdownV2',
     ...Markup.inlineKeyboard([
       [
-        Markup.button.callback(lang === 'sw' ? '🎟️ Tumia Coupon' : '🎟️ Use Coupon', `store:buy:coupon:${productId}`),
-        Markup.button.callback(lang === 'sw' ? '⚡ Thibitisha Ununuzi' : '⚡ Confirm Purchase', `store:buy_confirm:${productId}`),
+        Markup.button.callback(
+          lang === 'sw'
+            ? `💳 Wallet (TZS ${wallet.balance.toLocaleString('en-US')})`
+            : `💳 Wallet (TZS ${wallet.balance.toLocaleString('en-US')})`,
+          `store:buy_confirm:${productId}`
+        ),
       ],
-      [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)],
+      [
+        Markup.button.callback(
+          lang === 'sw' ? '📱 Lipia kwa Mobile Money' : '📱 Pay via Mobile Money',
+          `store:buy:mobilemoney:${productId}`
+        ),
+      ],
+      [
+        Markup.button.callback(lang === 'sw' ? '🎟️ Tumia Coupon' : '🎟️ Use Coupon', `store:buy:coupon:${productId}`),
+        Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`),
+      ],
     ]),
   })
 }
