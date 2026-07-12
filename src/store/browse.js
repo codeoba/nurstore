@@ -253,6 +253,10 @@ async function showSingleProductInBrowse(ctx, product, meta) {
     ? formatTextProductPreview(product, lang)
     : formatProductCard(product, lang)
 
+  const buyBtnLabel = product.isPreOrder
+    ? '🔜 Pre-Order'
+    : (lang === 'sw' ? '⚡ Nunua Sasa' : '⚡ Buy Now')
+
   const productButtons = [
     [
       Markup.button.callback(
@@ -260,7 +264,7 @@ async function showSingleProductInBrowse(ctx, product, meta) {
         `store:cart:add:${product.id}`
       ),
       Markup.button.callback(
-        lang === 'sw' ? '⚡ Nunua Sasa' : '⚡ Buy Now',
+        buyBtnLabel,
         `store:buy:${product.id}`
       ),
     ],
@@ -333,9 +337,12 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
     reviewText = `\n⭐ ${avgRating.toFixed(1)}/5 \\(${product._count.reviews} reviews\\)`
   }
 
-  const buyLabel = product.productType === 'text_content'
-    ? (lang === 'sw' ? '🔓 Nunua Kufungua' : '🔓 Buy to Unlock')
-    : (lang === 'sw' ? '⚡ Nunua Sasa' : '⚡ Buy Now')
+  let buyLabel = lang === 'sw' ? '⚡ Nunua Sasa' : '⚡ Buy Now'
+  if (product.isPreOrder) {
+    buyLabel = '🔜 Pre-Order'
+  } else if (product.productType === 'text_content') {
+    buyLabel = lang === 'sw' ? '🔓 Nunua Kufungua' : '🔓 Buy to Unlock'
+  }
 
   const keyboard = Markup.inlineKeyboard([
     [

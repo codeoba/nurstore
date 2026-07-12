@@ -162,7 +162,7 @@ async function showOrdersList(ctx, page = 1, filterStatus = '') {
     const user = o.user.username ? `@${o.user.username}` : String(o.user.telegramId)
     const status = formatOrderStatus(o.status)
     const flag = o.isFlagged ? '⚠️' : ''
-    text += `${flag}*\\#${o.id}* ${escapeMarkdown(user)} — ⭐${o.totalStars} — ${status}\n`
+    text += `${flag}*\\#${o.id}* ${escapeMarkdown(user)} — TZS ${o.totalTzs.toLocaleString('en-US')} — ${status}\n`
   }
 
   text += `\n📄 Ukurasa ${result.page}/${result.totalPages}`
@@ -201,13 +201,13 @@ async function showOrderDetail(ctx, orderId) {
     `📋 *Order \\#${order.id}*`,
     ``,
     `👤 Mteja: ${escapeMarkdown(user)}`,
-    `💫 Stars: ⭐ ${order.totalStars}`,
+    `💫 Kiasi: TZS ${order.totalTzs.toLocaleString('en-US')}`,
     `📊 Hali: ${status}`,
     `💳 Malipo: ${escapeMarkdown(order.paymentMethod)}`,
     order.paymentReference ? `🆔 Charge ID: \`${escapeMarkdown(order.paymentReference)}\`` : '',
     `📅 Tarehe: ${escapeMarkdown(formatDate(order.createdAt))}`,
     order.paidAt ? `✅ Imelipwa: ${escapeMarkdown(paidAt)}` : '',
-    order.coupon ? `🎟️ Coupon: ${escapeMarkdown(order.coupon.code)} \\(\\-⭐${order.couponDiscount}\\)` : '',
+    order.coupon ? `🎟️ Coupon: ${escapeMarkdown(order.coupon.code)} \\(\\-TZS ${order.couponDiscount.toLocaleString('en-US')}\\)` : '',
     order.isFlagged ? `\n⚠️ *BENDERA: ${escapeMarkdown(order.flagReason || '')}*` : '',
     ``,
     `📦 *Bidhaa:*`,

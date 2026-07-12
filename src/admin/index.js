@@ -20,14 +20,14 @@ async function showAdminMenu(ctx) {
     prisma.order.count({ where: { status: 'paid', paidAt: { gte: today } } }),
     prisma.order.aggregate({
       where: { status: { in: ['paid', 'delivered'] }, paidAt: { gte: today } },
-      _sum: { totalStars: true },
+      _sum: { totalTzs: true },
     }),
     prisma.product.count({ where: { isActive: true } }),
     prisma.order.count({ where: { status: 'pending' } }),
   ])
 
   const adminName = escapeMarkdown(ctx.from.first_name || 'Admin')
-  const stars = todayRevenue._sum.totalStars || 0
+  const revenue = todayRevenue._sum.totalTzs || 0
 
   const text = [
     `👨‍💼 *Admin Panel — ${escapeMarkdown(require('../config').bot.storeName)}*`,
@@ -35,7 +35,7 @@ async function showAdminMenu(ctx) {
     ``,
     `📊 *Takwimu za Leo:*`,
     `🛍️ Maagizo: *${todayOrders}*`,
-    `💫 Mapato: *⭐ ${stars}*`,
+    `💫 Mapato: *TZS ${revenue.toLocaleString('en-US')}*`,
     `⏳ Yanayosubiri: *${pendingOrders}*`,
     `📦 Bidhaa: *${totalProducts}*`,
     ``,
@@ -115,6 +115,50 @@ function registerAdminRouter(bot) {
 
   // ─── Broadcast ────────────────────────────────────────────
   registerBroadcastHandlers(bot)
+
+  // ─── Refund Approval/Rejection ────────────────────────────────
+  bot.action(/^admin:refund:(approve|reject):(\d+)$/, isAdmin, async (ctx) => {
+    const action = ctx.match[1]
+    const requestId = parseInt(ctx.match[2])
+    const status = action === 'approve' ? 'approved' : 'rejected'
+
+    await ctx.answerCbQuery(action === 'approve' ? '✅ Inaidhinisha refund...' : '❌ Inakataa refund...')
+
+    try {
+      const { resolveRefundRequest } = require('../services/refundService')
+      const { request, order, clientUserId } = await resolveRefundRequest(requestId, status, ctx.from.id)
+
+      // Notify admin in chat
+      await ctx.editMessageText(
+        `🔄 *Ombi la Refund #${request.orderId} limekamilika\\!*\n\n` +
+        `Hali: ${status === 'approved' ? 'IMEIDHINISHWA ✅' : 'IMEKATALIWA ❌'}\n` +
+        `Kiasi: TZS ${order.totalTzs.toLocaleString('en-US')}\n` +
+        `Mteja alijulishwa kiotomatiki\\.`,
+        { parse_mode: 'MarkdownV2' }
+      )
+
+      // Notify customer
+      const clientUser = await prisma.user.findUnique({
+        where: { id: clientUserId },
+        select: { telegramId: true, language: true }
+      })
+
+      if (clientUser) {
+        const notifyMsg = clientUser.language === 'sw'
+          ? (status === 'approved'
+              ? `✅ *Ombi la Refund Limekubaliwa\\!*\n\nKiasi cha TZS *${order.totalTzs.toLocaleString('en-US')}* kimerudishwa kwenye Wallet yako\\. Salio jipya linaonyeshwa kwenye Wasifu wako\\.`
+              : `❌ *Ombi la Refund Limekataliwa\\!*\n\nOmbi lako la kurejeshewa pesa kwa Order \\#${order.id} limekataliwa na wasimamizi\\. Kama una maswali wasiliana na msaada wetu\\.`)
+          : (status === 'approved'
+              ? `✅ *Refund Request Approved\\!*\n\nThe amount of TZS *${order.totalTzs.toLocaleString('en-US')}* has been credited back to your Wallet\\. View your updated balance in your Profile\\.`
+              : `❌ *Refund Request Rejected\\!*\n\nYour refund request for Order \\#${order.id} has been rejected by the admin\\. Please contact support if you have any questions\\.`)
+
+        await ctx.telegram.sendMessage(Number(clientUser.telegramId), notifyMsg, { parse_mode: 'MarkdownV2' }).catch(() => {})
+      }
+    } catch (err) {
+      logger.error('Failed to resolve refund request', { error: err.message, requestId })
+      await ctx.reply(`❌ Hitilafu: ${err.message}`)
+    }
+  })
 }
 
 // ─── Coupon Handlers ─────────────────────────────────────────

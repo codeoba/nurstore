@@ -21,6 +21,7 @@ enum ProductType {
 
 enum OrderStatus {
   pending
+  pre_ordered
   paid
   delivered
   failed
@@ -80,6 +81,8 @@ model User {
   referralCode     String         @unique @map("referral_code")
   referredBy       Int?           @map("referred_by")
   isBlocked        Boolean        @default(false) @map("is_blocked")
+  isVip            Boolean        @default(false) @map("is_vip")
+  vipExpiresAt     DateTime?      @map("vip_expires_at")
   commissionEarned Int            @default(0) @map("commission_earned") // commission from referrals in TZS
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
@@ -193,6 +196,8 @@ model Product {
   // Status
   isActive           Boolean       @default(true) @map("is_active")
   isFeatured         Boolean       @default(false) @map("is_featured")
+  isPreOrder         Boolean       @default(false) @map("is_pre_order")
+  isVipOnly          Boolean       @default(false) @map("is_vip_only")
 
   // Discount
   discountTzs        Int?          @map("discount_tzs")
@@ -238,6 +243,7 @@ model Order {
   coupon           Coupon?       @relation(fields: [couponId], references: [id])
   items            OrderItem[]
   payment          Payment?
+  refundRequest    RefundRequest?
 
   @@index([userId])
   @@index([status])
@@ -389,4 +395,18 @@ model UserSubscription {
 
   @@unique([userId, productId])
   @@map("user_subscriptions")
+}
+
+model RefundRequest {
+  id          Int       @id @default(autoincrement())
+  orderId     Int       @unique @map("order_id")
+  reason      String    @db.Text
+  status      String    @default("pending") // pending | approved | rejected
+  adminNotes  String?   @db.Text @map("admin_notes")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  resolvedAt  DateTime? @map("resolved_at")
+
+  order       Order     @relation(fields: [orderId], references: [id])
+
+  @@map("refund_requests")
 }

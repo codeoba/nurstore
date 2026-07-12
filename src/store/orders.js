@@ -47,6 +47,25 @@ function registerOrdersHandlers(bot) {
     }
   })
 
+  // ─── Refund Request Wizard Init ───────────────────────────────
+  bot.action(/^store:refund:start:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const orderId = parseInt(ctx.match[1])
+    const lang = ctx.session?.language || 'sw'
+
+    ctx.session.userWizard = { scene: 'refund', step: 'reason', data: { orderId } }
+
+    await ctx.editMessageText(
+      lang === 'sw'
+        ? '🔄 *Omba Refund*\n\nTafadhali andika sababu ya kuomba refund ya malipo ya order hii:'
+        : '🔄 *Request Refund*\n\nPlease write the reason for requesting a refund for this order:',
+      {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:order:${orderId}`)]]),
+      }
+    )
+  })
+
   // ─── Leave Review ─────────────────────────────────────────────
   bot.action(/^store:review:start:(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery()
@@ -237,15 +256,29 @@ async function showOrderDetail(ctx, orderId, lang = 'sw') {
     return
   }
 
+  // Kagua kama kuna refund request ya order hii
+  const refundReq = await prisma.refundRequest.findUnique({
+    where: { orderId: order.id }
+  })
+
   const status = formatOrderStatus(order.status, lang)
   const date = formatDate(order.createdAt, lang)
 
-  const text = lang === 'sw'
+  let refundStatusText = ''
+  if (refundReq) {
+    const refStatusesSw = { pending: 'Inasubiri Wasimamizi ⏳', approved: 'Imeidhinishwa ✅', rejected: 'Imekataliwa ❌' }
+    const refStatusesEn = { pending: 'Pending Approval ⏳', approved: 'Approved ✅', rejected: 'Rejected ❌' }
+    refundStatusText = lang === 'sw'
+      ? `\n🔄 *Hali ya Refund:* ${refStatusesSw[refundReq.status]}`
+      : `\n🔄 *Refund Status:* ${refStatusesEn[refundReq.status]}`
+  }
+
+  let text = lang === 'sw'
     ? [
         `📋 *Order \\#${order.id}*`,
         `📅 Tarehe: ${escapeMarkdown(date)}`,
         `💰 Kiasi: TZS ${order.totalTzs.toLocaleString('en-US')}`,
-        `📊 Hali: ${status}`,
+        `📊 Hali: ${status}${escapeMarkdown(refundStatusText)}`,
         ``,
         `📦 *Bidhaa Zako:*`,
       ].join('\n')
@@ -253,7 +286,7 @@ async function showOrderDetail(ctx, orderId, lang = 'sw') {
         `📋 *Order \\#${order.id}*`,
         `📅 Date: ${escapeMarkdown(date)}`,
         `💰 Amount: TZS ${order.totalTzs.toLocaleString('en-US')}`,
-        `📊 Status: ${status}`,
+        `📊 Status: ${status}${escapeMarkdown(refundStatusText)}`,
         ``,
         `📦 *Your Products:*`,
       ].join('\n')
@@ -288,6 +321,16 @@ async function showOrderDetail(ctx, orderId, lang = 'sw') {
         ),
       ])
     }
+
+    // Kama hajawahi kuomba refund ya bidhaa hii bado, mruhusu kuomba
+    if (!refundReq) {
+      itemButtons.push([
+        Markup.button.callback(
+          lang === 'sw' ? '🔄 Omba Refund' : '🔄 Request Refund',
+          `store:refund:start:${order.id}`
+        )
+      ])
+    }
   }
 
   itemButtons.push([Markup.button.callback(lang === 'sw' ? '◀️ Maagizo' : '◀️ Orders', 'store:orders')])
@@ -307,4 +350,70 @@ async function getDbUser(telegramId) {
 module.exports = {
   registerOrdersHandlers,
   handleReviewWizard,
+  handleRefundWizard,
+}
+
+async function handleRefundWizard(ctx) {
+  const wizard = ctx.session?.userWizard
+  if (!wizard || wizard.scene !== 'refund' || wizard.step !== 'reason') return false
+
+  const lang = ctx.session?.language || 'sw'
+  const text = ctx.message?.text?.trim()
+
+  if (!text || text.length < 10) {
+    await ctx.reply(
+      lang === 'sw'
+        ? '⚠️ Sababu lazima iwe na maneno angalau herufi 10. Tafadhali andika sababu kamili:'
+        : '⚠️ Reason must be at least 10 characters long. Please write a full reason:'
+    )
+    return true
+  }
+
+  ctx.session.userWizard = null
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true }
+    })
+
+    const { createRefundRequest } = require('../services/refundService')
+    const request = await createRefundRequest(user.id, wizard.data.orderId, text)
+
+    await ctx.reply(
+      lang === 'sw'
+        ? `✅ *Ombi la Refund Limetumwa\\!*\n\nOmbi lako limepokelewa na linakaguliwa na Wasimamizi\\. Utajulishwa hapa pindi litakapothibitishwa\\.`
+        : `✅ *Refund Request Sent\\!*\n\nYour request has been received and is being reviewed by the Admins\\. You will be notified here once it is resolved\\.`,
+      {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+      }
+    )
+
+    // Notify admins with inline approval options
+    const { notifyAdmins } = require('../services/notificationService')
+    const usernameStr = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
+    await notifyAdmins(
+      ctx.telegram,
+      `🔄 *Ombi Jipya la Refund (Order #${request.orderId})*\n\n` +
+      `👤 Mteja: ${usernameStr}\n` +
+      `💰 Kiasi: TZS ${request.order.totalTzs.toLocaleString('en-US')}\n` +
+      `📝 Sababu: ${request.reason}\n`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ Kubali (Approve)', `admin:refund:approve:${request.id}`),
+          Markup.button.callback('❌ Kataa (Reject)', `admin:refund:reject:${request.id}`),
+        ]
+      ])
+    ).catch(() => {})
+
+  } catch (err) {
+    await ctx.reply(
+      lang === 'sw'
+        ? `❌ Hitilafu ya kutuma ombi: ${err.message}`
+        : `❌ Error sending request: ${err.message}`
+    )
+  }
+
+  return true
 }

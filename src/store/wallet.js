@@ -147,6 +147,100 @@ function registerWalletHandlers(bot) {
       await ctx.reply(lang === 'sw' ? '❌ Kushindwa kukagua muamala na Binance Pay. Jaribu tena.' : '❌ Failed to verify transaction with Binance Pay.')
     }
   })
+
+  // ─── VIP Join Screen ──────────────────────────────────────────
+  bot.action('store:vip:join_init', async (ctx) => {
+    await ctx.answerCbQuery()
+    const lang = ctx.session?.language || 'sw'
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true, isVip: true, vipExpiresAt: true }
+    })
+
+    const wallet = await getOrCreateWallet(user.id)
+    const price = config.vip.priceTzs || 10000
+    const discount = config.vip.discountPercent || 15
+
+    let text = lang === 'sw'
+      ? `👑 *Jiunge na Uanachama wa VIP\\!*\n\n` +
+        `Kuwa mwanachama wa VIP wa Duka la Digital na upate faida zifuatazo:\n` +
+        `• Punguzo la *${discount}%* kwa kila bidhaa dukani kiotomatiki\\.\n` +
+        `• Uwezo wa kununua bidhaa za VIP Pekee \\(VIP Only\\)\\.\n` +
+        `• Support ya haraka zaidi kutoka kwa wasaidizi wetu\\.\n\n` +
+        `💰 *Gharama:* TZS *${price.toLocaleString('en-US')}* kwa siku 30\n` +
+        `💳 Salio lako la sasa: TZS *${wallet.balance.toLocaleString('en-US')}*\n\n`
+      : `👑 *Join VIP Membership\\!*\n\n` +
+        `Become a VIP member of our digital store and enjoy the following benefits:\n` +
+        `• Permanent *${discount}%* discount on all products\\.\n` +
+        `• Access to exclusive VIP-Only products\\.\n` +
+        `• Priority support from our customer care team\\.\n\n` +
+        `💰 *Price:* TZS *${price.toLocaleString('en-US')}* for 30 days\n` +
+        `💳 Your Balance: TZS *${wallet.balance.toLocaleString('en-US')}*\n\n`
+
+    if (user.isVip && user.vipExpiresAt) {
+      const expDate = user.vipExpiresAt.toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-US')
+      text += lang === 'sw'
+        ? `⭐ Wewe tayari ni mwanachama wa *VIP*\\. Uanachama wako utaisha tarehe *${escapeMarkdown(expDate)}*\\. Kulipia kutaongeza siku 30 zaidi\\.`
+        : `⭐ You are currently a *VIP* member\\. Your membership expires on *${escapeMarkdown(expDate)}*\\. Subscribing again will add 30 more days\\.`
+    }
+
+    const payLabel = lang === 'sw'
+      ? `💳 Lipia TZS ${price.toLocaleString('en-US')} kutoka Wallet`
+      : `💳 Pay TZS ${price.toLocaleString('en-US')} from Wallet`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(payLabel, 'store:vip:join_confirm')],
+      [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Wasifu' : '◀️ Back to Profile', 'store:profile')],
+    ])
+
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  })
+
+  // ─── VIP Join Confirmation ────────────────────────────────────
+  bot.action('store:vip:join_confirm', async (ctx) => {
+    const lang = ctx.session?.language || 'sw'
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true, username: true, fullName: true }
+    })
+
+    try {
+      const { purchaseVip } = require('../services/vipService')
+      const updatedUser = await purchaseVip(user.id, 30)
+
+      await ctx.answerCbQuery(lang === 'sw' ? '🎉 Umefanikiwa kujiunga na VIP!' : '🎉 Successfully joined VIP!', { show_alert: true })
+
+      const expDate = updatedUser.vipExpiresAt.toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-US')
+
+      const text = lang === 'sw'
+        ? `🎉 *Hongera sana\\!*\n\nUmekuwa mwanachama wa *VIP* wa Duka la Digital\\. Uanachama wako utaisha tarehe *${escapeMarkdown(expDate)}*\\.\n\nSasa unaweza kufurahia punguzo la ${config.vip.discountPercent}% kwenye ununuzi wako wote\\!`
+        : `🎉 *Congratulations\\!*\n\nYou are now a *VIP* member of our Digital Store\\. Your membership expires on *${escapeMarkdown(expDate)}*\\.\n\nYou can now enjoy a ${config.vip.discountPercent}% discount on all your purchases\\!`
+
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback(lang === 'sw' ? '🛍️ Angalia Bidhaa' : '🛍️ Browse Products', 'store:browse')],
+        [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Wasifu' : '◀️ Back to Profile', 'store:profile')],
+      ])
+
+      await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+
+      // Notify admins
+      const { notifyAdmins } = require('../services/notificationService')
+      const clientName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
+      await notifyAdmins(
+        ctx.telegram,
+        `👑 *Mwanachama Mpya wa VIP!*\n\n` +
+        `👤 Jina: ${clientName}\n` +
+        `📅 Expire date: ${expDate}\n` +
+        `💰 Kiasi kilicholipwa: TZS ${(config.vip.priceTzs || 10000).toLocaleString('en-US')}`
+      ).catch(() => {})
+
+    } catch (err) {
+      logger.error('Failed to purchase VIP', { error: err.message, userId: user.id })
+      await ctx.answerCbQuery(err.message, { show_alert: true })
+    }
+  })
 }
 
 // ─── Help Functions ──────────────────────────────────────────

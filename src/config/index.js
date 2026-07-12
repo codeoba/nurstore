@@ -74,6 +74,12 @@ const config = {
     },
   },
 
+  // VIP Settings
+  vip: {
+    priceTzs: parseInt(optional('VIP_PRICE_TZS', '10000'), 10),
+    discountPercent: parseInt(optional('VIP_DISCOUNT_PERCENT', '15'), 10),
+  },
+
   // File Storage
   storage: {
     uploadDir: optional('UPLOAD_DIR', './uploads'),

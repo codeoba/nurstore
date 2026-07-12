@@ -108,16 +108,16 @@ async function showPeriodReport(ctx, period) {
       paidAt: { gte: since },
     },
     orderBy: { paidAt: 'asc' },
-    select: { paidAt: true, totalStars: true },
+    select: { paidAt: true, totalTzs: true },
   })
 
   // Group kwa siku
   const byDay = {}
   for (const order of orders) {
     const day = new Date(order.paidAt).toLocaleDateString('sw-TZ')
-    if (!byDay[day]) byDay[day] = { count: 0, stars: 0 }
+    if (!byDay[day]) byDay[day] = { count: 0, tzs: 0 }
     byDay[day].count++
-    byDay[day].stars += order.totalStars
+    byDay[day].tzs += order.totalTzs
   }
 
   const periodName = period === 'daily' ? 'Leo' : period === 'weekly' ? 'Wiki Hii' : 'Mwezi Huu'
@@ -128,11 +128,11 @@ async function showPeriodReport(ctx, period) {
     text += '_Hakuna mauzo kwenye kipindi hiki_'
   } else {
     for (const [day, data] of Object.entries(byDay)) {
-      text += `📅 ${escapeMarkdown(day)}: ${data.count} maagizo — ⭐ ${data.stars}\n`
+      text += `📅 ${escapeMarkdown(day)}: ${data.count} maagizo — TZS ${data.tzs.toLocaleString('en-US')}\n`
     }
-    const totalRevenue = Object.values(byDay).reduce((s, d) => s + d.stars, 0)
+    const totalRevenue = Object.values(byDay).reduce((s, d) => s + d.tzs, 0)
     const totalOrders = Object.values(byDay).reduce((s, d) => s + d.count, 0)
-    text += `\n*Jumla: ${totalOrders} maagizo — ⭐ ${totalRevenue}*`
+    text += `\n*Jumla: ${totalOrders} maagizo — TZS ${totalRevenue.toLocaleString('en-US')}*`
   }
 
   await ctx.editMessageText(text, {
@@ -176,17 +176,17 @@ async function showRevenueReport(ctx) {
   const [paid, delivered, pending, failed] = await Promise.all([
     prisma.order.aggregate({
       where: { status: 'paid' },
-      _sum: { totalStars: true },
+      _sum: { totalTzs: true },
       _count: true,
     }),
     prisma.order.aggregate({
       where: { status: 'delivered' },
-      _sum: { totalStars: true },
+      _sum: { totalTzs: true },
       _count: true,
     }),
     prisma.order.aggregate({
       where: { status: 'pending' },
-      _sum: { totalStars: true },
+      _sum: { totalTzs: true },
       _count: true,
     }),
     prisma.order.aggregate({
@@ -195,18 +195,17 @@ async function showRevenueReport(ctx) {
     }),
   ])
 
-  const totalRevenue = (paid._sum.totalStars || 0) + (delivered._sum.totalStars || 0)
+  const totalRevenue = (paid._sum.totalTzs || 0) + (delivered._sum.totalTzs || 0)
 
   let text = [
     `💰 *Ripoti ya Mapato*`,
     ``,
-    `✅ Imelipwa: ⭐ ${paid._sum.totalStars || 0} \\(${paid._count} maagizo\\)`,
-    `📬 Imetumwa: ⭐ ${delivered._sum.totalStars || 0} \\(${delivered._count} maagizo\\)`,
+    `✅ Imelipwa: TZS ${(paid._sum.totalTzs || 0).toLocaleString('en-US')} \\(${paid._count} maagizo\\)`,
+    `📬 Imetumwa: TZS ${(delivered._sum.totalTzs || 0).toLocaleString('en-US')} \\(${delivered._count} maagizo\\)`,
     `⏳ Inasubiri: ${pending._count} maagizo`,
     `❌ Zilizoshindwa: ${failed._count} maagizo`,
     ``,
-    `💫 *Jumla: ⭐ ${totalRevenue}*`,
-    `🇹🇿 *Approx TZS: ${starsToTzs(totalRevenue)}*`,
+    `💫 *Jumla: TZS ${totalRevenue.toLocaleString('en-US')}*`,
   ].join('\n')
 
   await ctx.editMessageText(text, {
@@ -226,7 +225,7 @@ async function getOrderStats(dateFilter) {
   const [agg, failedCount] = await Promise.all([
     prisma.order.aggregate({
       where,
-      _sum: { totalStars: true },
+      _sum: { totalTzs: true },
       _count: true,
     }),
     prisma.order.count({ where: { status: { in: ['failed', 'cancelled'] } } }),
@@ -234,7 +233,7 @@ async function getOrderStats(dateFilter) {
 
   return {
     count: agg._count || 0,
-    revenue: agg._sum.totalStars || 0,
+    revenue: agg._sum.totalTzs || 0,
     failed: failedCount,
   }
 }

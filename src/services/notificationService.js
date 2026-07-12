@@ -28,9 +28,9 @@ async function notifyAdminNewOrder(bot, order, user) {
     `🛍️ *Order Mpya \\#${order.id}\\!*`,
     ``,
     `👤 Mteja: ${escMd(username)}`,
-    `💫 Stars: ⭐ ${order.totalStars}`,
+    `💫 Kiasi: TZS ${order.totalTzs?.toLocaleString('en-US')}`,
     `📦 Bidhaa: ${order.items?.length || 0}`,
-    `💳 Malipo: ${order.paymentMethod === 'telegram_stars' ? '⭐ Telegram Stars' : 'Manual'}`,
+    `💳 Malipo: ${order.paymentMethod}`,
     order.isFlagged ? `\n⚠️ *IMEWEKWA BENDERA* \\- Angalia!` : '',
   ].filter(Boolean).join('\n')
 
@@ -45,7 +45,7 @@ async function notifyAdminPaymentReceived(bot, order) {
     `✅ *Malipo Yamepokelewa\\!*`,
     ``,
     `📋 Order \\#${order.id}`,
-    `💫 Stars: ⭐ ${order.totalStars}`,
+    `💫 Kiasi: TZS ${order.totalTzs?.toLocaleString('en-US')}`,
     `💳 Charge ID: \`${escMd(order.paymentReference || 'N/A')}\``,
   ].join('\n')
 

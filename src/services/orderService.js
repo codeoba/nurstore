@@ -27,6 +27,7 @@ async function getUserCart(userId) {
           stock: true,
           isActive: true,
           productType: true,
+          isVipOnly: true,
         },
       },
     },
@@ -37,11 +38,15 @@ async function getUserCart(userId) {
 /**
  * Hesabu jumla ya bei kwa cart (TZS)
  */
-function calculateCartTotal(cartItems) {
+function calculateCartTotal(cartItems, isVip = false) {
   const { isDiscountActive } = require('../utils/formatting')
+  const vipDiscount = config.vip?.discountPercent || 15
   return cartItems.reduce((total, item) => {
     const product = item.product
-    const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+    let price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+    if (isVip) {
+      price = Math.round(price * (1 - vipDiscount / 100))
+    }
     return total + (price * item.quantity)
   }, 0)
 }
@@ -56,8 +61,9 @@ function calculateCartTotal(cartItems) {
  * @param {number} couponDiscount - TZS zilizopunguzwa
  * @returns {object} Order iliyoundwa
  */
-async function createOrderFromCart(userId, cartItems, couponId = null, couponDiscount = 0) {
+async function createOrderFromCart(userId, cartItems, couponId = null, couponDiscount = 0, isVip = false) {
   const { isDiscountActive } = require('../utils/formatting')
+  const vipDiscount = config.vip?.discountPercent || 15
 
   if (cartItems.length === 0) {
     throw new Error('Cart iko tupu')
@@ -74,7 +80,7 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
     }
   }
 
-  const totalTzs = calculateCartTotal(cartItems) - couponDiscount
+  const totalTzs = calculateCartTotal(cartItems, isVip) - couponDiscount
   if (totalTzs < 100) throw new Error('Jumla ya bei lazima iwe zaidi ya TZS 100')
 
   // Tengeneza order na items zote kwenye transaction moja
@@ -90,8 +96,14 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
         items: {
           create: cartItems.map(item => {
             const product = item.product
-            const tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
-            const usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
+            let tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+            let usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
+            if (isVip) {
+              tzs = Math.round(tzs * (1 - vipDiscount / 100))
+              if (usd) {
+                usd = parseFloat((usd * (1 - vipDiscount / 100)).toFixed(2))
+              }
+            }
             return {
               productId: product.id,
               priceTzsAtPurchase: tzs,
@@ -136,8 +148,9 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
 /**
  * Tengeneza order ya bidhaa moja bila cart (Buy Now)
  */
-async function createDirectOrder(userId, productId, couponId = null, couponDiscount = 0) {
+async function createDirectOrder(userId, productId, couponId = null, couponDiscount = 0, isVip = false) {
   const { isDiscountActive } = require('../utils/formatting')
+  const vipDiscount = config.vip?.discountPercent || 15
 
   const product = await prisma.product.findUnique({
     where: { id: productId, isActive: true },
@@ -152,14 +165,23 @@ async function createDirectOrder(userId, productId, couponId = null, couponDisco
       discountEndsAt: true,
       stock: true,
       productType: true,
+      isVipOnly: true,
     },
   })
 
   if (!product) throw new Error('Bidhaa haipatikani')
   if (product.stock !== null && product.stock < 1) throw new Error('Bidhaa imekwisha')
 
-  const tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
-  const usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
+  let tzs = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  let usd = isDiscountActive(product) ? product.discountUsd : product.priceUsd
+
+  if (isVip) {
+    tzs = Math.round(tzs * (1 - vipDiscount / 100))
+    if (usd) {
+      usd = parseFloat((usd * (1 - vipDiscount / 100)).toFixed(2))
+    }
+  }
+
   const totalTzs = Math.max(tzs - couponDiscount, 100)
 
   const order = await prisma.order.create({
@@ -224,6 +246,7 @@ async function payOrderWithWallet(userId, orderId) {
                 name: true,
                 stock: true,
                 isActive: true,
+                isPreOrder: true,
               },
             },
           },
@@ -271,11 +294,14 @@ async function payOrderWithWallet(userId, orderId) {
       },
     })
 
+    const hasPreOrder = order.items.some(item => item.product.isPreOrder)
+    const newStatus = hasPreOrder ? 'pre_ordered' : 'paid'
+
     // 4. Update order na kuongeza sales count / kupunguza stock
     const updatedOrder = await tx.order.update({
       where: { id: orderId },
       data: {
-        status: 'paid',
+        status: newStatus,
         paymentMethod: 'wallet',
         paymentReference: transactionId,
         paidAt: new Date(),
@@ -545,4 +571,64 @@ module.exports = {
   getOrderById,
   adminGetOrders,
   checkFraud,
+  releasePreOrderOrders,
+}
+
+/**
+ * Release all pre-orders for a specific product by delivering the content
+ * and updating their order status.
+ */
+async function releasePreOrderOrders(telegram, productId) {
+  const { deliverOrder } = require('./deliveryService')
+
+  // Find all orders in status 'pre_ordered' containing this product
+  const orders = await prisma.order.findMany({
+    where: {
+      status: 'pre_ordered',
+      items: {
+        some: {
+          productId,
+        },
+      },
+    },
+    include: {
+      items: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              productType: true,
+              filePath: true,
+              fileTelegramId: true,
+              lockedContent: true,
+              contentFormat: true,
+            },
+          },
+        },
+      },
+      user: {
+        select: {
+          id: true,
+          telegramId: true,
+          fullName: true,
+        },
+      },
+    },
+  })
+
+  logger.info(`Releasing pre-orders for product ${productId}`, { count: orders.length })
+
+  let count = 0
+  for (const order of orders) {
+    try {
+      // 1. Deliver the order content
+      await deliverOrder(telegram, Number(order.user.telegramId), order)
+      count++
+    } catch (err) {
+      logger.error(`Failed to deliver pre-order ${order.id} during release`, { error: err.message })
+    }
+  }
+
+  return count
 }

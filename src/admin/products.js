@@ -106,6 +106,29 @@ function registerAdminProductHandlers(bot) {
     await showProductDetail(ctx, productId)
   })
 
+  // Release Pre-Order product
+  bot.action(/^admin:prod:release:(\d+)$/, isAdmin, async (ctx) => {
+    const productId = parseInt(ctx.match[1])
+    await ctx.answerCbQuery('🚀 Kuanza kutuma bidhaa...')
+
+    try {
+      const { releasePreOrderOrders } = require('../services/orderService')
+
+      // Update isPreOrder status in DB
+      await updateProduct(productId, { isPreOrder: false })
+
+      // Send the content to all buyers
+      const deliveredCount = await releasePreOrderOrders(ctx.telegram, productId)
+
+      await auditLog(ctx.from.id, 'product.released', { productId, deliveredCount })
+      await ctx.reply(`✅ Bidhaa imewekwa LIVE! Maudhui yametumwa kwa wateja wote ${deliveredCount} walioagiza mapema.`)
+      await showProductDetail(ctx, productId)
+    } catch (err) {
+      logger.error('Failed to release pre-order', { error: err.message, productId })
+      await ctx.reply(`❌ Hitilafu ya kurelease bidhaa: ${err.message}`)
+    }
+  })
+
   // Delete product
   bot.action(/^admin:prod:delete:(\d+)$/, isAdmin, async (ctx) => {
     const productId = parseInt(ctx.match[1])
@@ -421,18 +444,30 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       return true
     }
 
-    case 'stock': {
-      let stock = null
-      if (text && text.toLowerCase() !== 'unlimited') {
-        stock = parseNumber(text)
-        if (stock === null || stock < 0) {
-          await ctx.reply('⚠️ Andika nambari ya stock au "unlimited"')
-          return true
-        }
-      }
       data.stock = stock
 
-      // Onyesha confirmation
+      wizard.step = 'vip_only'
+      await ctx.reply(
+        `❓ Je, bidhaa hii ni maalum kwa wanachama wa VIP tu?\n\n` +
+        `Andika *ndiyo* au *hapana*:`,
+        { parse_mode: 'MarkdownV2' }
+      )
+      return true
+    }
+
+    case 'vip_only': {
+      data.isVipOnly = (text?.toLowerCase() === 'ndiyo' || text?.toLowerCase() === 'yes')
+      wizard.step = 'pre_order'
+      await ctx.reply(
+        `❓ Je, hii ni Pre-Order (mteja kulipia kabla bidhaa haijawa rasmi)?\n\n` +
+        `Andika *ndiyo* au *hapana*:`,
+        { parse_mode: 'MarkdownV2' }
+      )
+      return true
+    }
+
+    case 'pre_order': {
+      data.isPreOrder = (text?.toLowerCase() === 'ndiyo' || text?.toLowerCase() === 'yes')
       await showProductConfirmation(ctx, wizard)
       return true
     }
@@ -494,6 +529,8 @@ async function showProductConfirmation(ctx, wizard) {
     `📝 Aina: ${typeIcons[d.productType]} ${d.productType}`,
     `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} (approx. $${d.priceUsd.toFixed(2)})`,
     `📊 Stock: ${d.stock === null ? 'Unlimited' : d.stock}`,
+    `👑 VIP Only: ${d.isVipOnly ? 'Ndiyo ✅' : 'Hapana ❌'}`,
+    `🔜 Pre-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
     d.lockedContent ? `🔒 Maudhui ya siri: ${d.lockedContent.substring(0, 50)}...` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
@@ -690,24 +727,37 @@ async function showProductDetail(ctx, productId) {
     `💸 Punguzo: ${discount}`,
     `📊 Mauzo: ${p.salesCount}`,
     `📦 Stock: ${p.stock === null ? 'Unlimited' : p.stock}`,
+    `👑 VIP Only: ${p.isVipOnly ? 'Ndiyo ✅' : 'Hapana ❌'}`,
+    `🔜 Pre-Order: ${p.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     `📊 Hali: ${status}`,
     `⭐ Featured: ${featured}`,
     `📅 Iliundwa: ${escapeMarkdown(new Date(p.createdAt).toLocaleDateString('sw-TZ'))}`,
   ].join('\n')
 
+  const row1 = [
+    Markup.button.callback(p.isActive ? '❌ Zima' : '✅ Washa', `admin:prod:toggle:${p.id}`),
+    Markup.button.callback(p.isFeatured ? '☆ Unfeature' : '⭐ Feature', `admin:prod:feature:${p.id}`),
+  ]
+
+  const row2 = [
+    Markup.button.callback('💸 Punguzo', `admin:prod:discount:${p.id}`),
+    Markup.button.callback('🗑️ Futa', `admin:prod:delete:${p.id}`),
+  ]
+
+  const keyboardRows = [row1, row2]
+
+  // Kama ni pre-order na ipo active, ongeza kitufe cha kuiweka Live
+  if (p.isPreOrder && p.isActive) {
+    keyboardRows.push([
+      Markup.button.callback('🚀 Weka LIVE (Release)', `admin:prod:release:${p.id}`)
+    ])
+  }
+
+  keyboardRows.push([Markup.button.callback('◀️ Orodha', 'admin:products')])
+
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
-    ...Markup.inlineKeyboard([
-      [
-        Markup.button.callback(p.isActive ? '❌ Zima' : '✅ Washa', `admin:prod:toggle:${p.id}`),
-        Markup.button.callback(p.isFeatured ? '☆ Unfeature' : '⭐ Feature', `admin:prod:feature:${p.id}`),
-      ],
-      [
-        Markup.button.callback('💸 Punguzo', `admin:prod:discount:${p.id}`),
-        Markup.button.callback('🗑️ Futa', `admin:prod:delete:${p.id}`),
-      ],
-      [Markup.button.callback('◀️ Orodha', 'admin:products')],
-    ]),
+    ...Markup.inlineKeyboard(keyboardRows),
   })
 }
 

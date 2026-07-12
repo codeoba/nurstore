@@ -174,6 +174,13 @@ bot.on('message', async (ctx) => {
       if (handled) return
     }
 
+    // Refund
+    if (userWizard.scene === 'refund') {
+      const { handleRefundWizard } = require('./store/orders')
+      const handled = await handleRefundWizard(ctx)
+      if (handled) return
+    }
+
     // Support ticket
     if (userWizard.scene === 'support') {
       const handled = await handleSupportWizard(ctx)

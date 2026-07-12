@@ -56,6 +56,8 @@ async function getProductsPage(page = 1, filters = {}) {
         discountStartsAt: true,
         discountEndsAt: true,
         salesCount: true,
+        isPreOrder: true,
+        isVipOnly: true,
         // MUHIMU: lockedContent HAIMO HAPA - salama kabisa
         category: { select: { id: true, name: true } },
         _count: { select: { reviews: true } },
@@ -254,6 +256,8 @@ async function createProduct(data) {
       lockedContent: data.lockedContent || null,
       contentFormat: data.contentFormat || 'plain',
       subscriptionDays: data.subscriptionDays || null,
+      isPreOrder: data.isPreOrder ?? false,
+      isVipOnly: data.isVipOnly ?? false,
     },
   })
 

@@ -106,6 +106,12 @@ function registerCheckoutHandlers(bot) {
  * Shughulikia ununuzi wa Cart kwa Wallet
  */
 async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, lang) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isVip: true },
+  })
+
+  const isVip = user?.isVip || false
   const cartItems = await getUserCart(userId)
 
   if (cartItems.length === 0) {
@@ -113,8 +119,26 @@ async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, 
     return
   }
 
+  // Angalia bidhaa za VIP pekee
+  const hasVipOnlyProduct = cartItems.some(item => item.product.isVipOnly)
+  if (hasVipOnlyProduct && !isVip) {
+    const text = lang === 'sw'
+      ? `👑 *Maudhui Maalum ya VIP\\!*\n\n` +
+        `Kikapu chako kina bidhaa inayohitaji uanachama wa *VIP*\\. Tafadhali jiunge na VIP kwanza kupitia Wasifu wako ili kuagiza bidhaa hii\\.`
+      : `👑 *VIP Exclusive Content\\!*\n\n` +
+        `Your cart contains a VIP-only product\\. Please join VIP first in your Profile to purchase this item\\.`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '👑 Jiunge na VIP' : '👑 Join VIP', 'store:vip:join_init')],
+      [Markup.button.callback(lang === 'sw' ? '🛒 Rudi kwenye Kikapu' : '🛒 Back to Cart', 'store:cart')],
+    ])
+
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+    return
+  }
+
   const wallet = await getOrCreateWallet(userId)
-  const cartTotal = calculateCartTotal(cartItems)
+  const cartTotal = calculateCartTotal(cartItems, isVip)
   const finalTotal = Math.max(cartTotal - couponDiscount, 100)
 
   if (wallet.balance < finalTotal) {
@@ -139,20 +163,39 @@ async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, 
 
   // Mtumiaji ana salio la kutosha!
   try {
-    // 1. Unda order
-    const order = await createOrderFromCart(userId, cartItems, couponId, couponDiscount)
+    // 1. Unda order (kupitisha isVip kupiga hesabu)
+    const order = await createOrderFromCart(userId, cartItems, couponId, couponDiscount, isVip)
 
     // 2. Lipia order kwa wallet (hukata salio, husasisha stock na log)
     const paidOrder = await payOrderWithWallet(userId, order.id)
 
-    // 3. Tuma bidhaa mara moja
-    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
-
-    // 4. Futa cart
+    // Futa cart
     await prisma.cartItem.deleteMany({ where: { userId } }).catch(() => {})
 
     // Award commission ya referral (TZS)
     await awardReferralCommission(userId, paidOrder.totalTzs).catch(() => {})
+
+    if (paidOrder.status === 'pre_ordered') {
+      await ctx.reply(
+        lang === 'sw'
+          ? `🎉 *Oda ya Mapema (Pre-Order) Imekamilika\\!*\n\n` +
+            `Kiasi kilichokatwa: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+            `Umeagiza mapema: *${escapeMarkdown(paidOrder.items.map(i => i.product.name).join(', '))}*\\.\n\n` +
+            `Bidhaa hii itatumwa hapa kiotomatiki pindi itakapowekwa LIVE na Admin\\! Shukrani\\.`
+          : `🎉 *Pre-Order Completed\\!*\n\n` +
+            `Amount deducted: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+            `You have pre-ordered: *${escapeMarkdown(paidOrder.items.map(i => i.product.name).join(', '))}*\\.\n\n` +
+            `This content will be delivered here automatically once released by the Admin\\! Thank you\\.`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+        }
+      )
+      return
+    }
+
+    // 3. Tuma bidhaa mara moja
+    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
 
     await ctx.reply(
       lang === 'sw'
@@ -177,6 +220,13 @@ async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, 
  * Shughulikia ununuzi wa bidhaa moja (Buy Now) kwa Wallet
  */
 async function processDirectWalletCheckout(ctx, userId, productId, couponId, couponDiscount, lang) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isVip: true },
+  })
+
+  const isVip = user?.isVip || false
+
   const product = await prisma.product.findUnique({
     where: { id: productId, isActive: true },
   })
@@ -186,13 +236,30 @@ async function processDirectWalletCheckout(ctx, userId, productId, couponId, cou
     return
   }
 
-  if (product.stock !== null && product.stock < 1) {
-    await ctx.reply(lang === 'sw' ? '❌ Bidhaa hii imekwisha stock.' : '❌ Out of stock.')
+  // Angalia kama mteja anajaribu kununua bidhaa ya VIP tu bila kuwa VIP
+  if (product.isVipOnly && !isVip) {
+    const text = lang === 'sw'
+      ? `👑 *Bidhaa Maalum ya VIP\\!*\n\n` +
+        `Bidhaa hii inapatikana kwa wanachama wa *VIP* tu\\. Tafadhali jiunge na VIP kwanza kuweza kununua\\.`
+      : `👑 *VIP Exclusive Product\\!*\n\n` +
+        `This product is only available for *VIP* members\\. Please join VIP first to purchase\\.`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '👑 Jiunge na VIP' : '👑 Join VIP', 'store:vip:join_init')],
+      [Markup.button.callback(lang === 'sw' ? '◀️ Rudi kwenye Bidhaa' : '◀️ Back to Product', `store:product:${productId}`)],
+    ])
+
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
     return
   }
 
   const wallet = await getOrCreateWallet(userId)
-  const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  let price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  if (isVip) {
+    const vipDiscount = config.vip?.discountPercent || 15
+    price = Math.round(price * (1 - vipDiscount / 100))
+  }
+
   const finalTotal = Math.max(price - couponDiscount, 100)
 
   if (wallet.balance < finalTotal) {
@@ -217,17 +284,36 @@ async function processDirectWalletCheckout(ctx, userId, productId, couponId, cou
 
   // Mtumiaji ana hela
   try {
-    // 1. Unda order
-    const order = await createDirectOrder(userId, productId, couponId, couponDiscount)
+    // 1. Unda order (kupitisha isVip)
+    const order = await createDirectOrder(userId, productId, couponId, couponDiscount, isVip)
 
     // 2. Lipia order kwa wallet
     const paidOrder = await payOrderWithWallet(userId, order.id)
 
-    // 3. Tuma bidhaa mara moja
-    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
-
     // Award commission ya referral (TZS)
     await awardReferralCommission(userId, paidOrder.totalTzs).catch(() => {})
+
+    if (paidOrder.status === 'pre_ordered') {
+      await ctx.reply(
+        lang === 'sw'
+          ? `🎉 *Oda ya Mapema (Pre-Order) Imekamilika\\!*\n\n` +
+            `Kiasi kilichokatwa: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+            `Umeagiza mapema: *${escapeMarkdown(product.name)}*\\.\n\n` +
+            `Bidhaa hii itatumwa hapa kiotomatiki pindi itakapowekwa LIVE na Admin\\! Shukrani\\.`
+          : `🎉 *Pre-Order Completed\\!*\n\n` +
+            `Amount deducted: *TZS ${finalTotal.toLocaleString('en-US')}*\n` +
+            `You have pre-ordered: *${escapeMarkdown(product.name)}*\\.\n\n` +
+            `This content will be delivered here automatically once released by the Admin\\! Thank you\\.`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '📦 Maagizo Yangu' : '📦 My Orders', 'store:orders')]]),
+        }
+      )
+      return
+    }
+
+    // 3. Tuma bidhaa mara moja
+    await deliverOrder(ctx.telegram, ctx.from.id, paidOrder)
 
     await ctx.reply(
       lang === 'sw'
@@ -253,6 +339,13 @@ async function processDirectWalletCheckout(ctx, userId, productId, couponId, cou
 // ─── Direct Buy Flow Initiator ────────────────────────────────
 
 async function initDirectCheckout(ctx, userId, productId, lang) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isVip: true },
+  })
+
+  const isVip = user?.isVip || false
+
   const product = await prisma.product.findUnique({
     where: { id: productId, isActive: true },
   })
@@ -262,12 +355,40 @@ async function initDirectCheckout(ctx, userId, productId, lang) {
     return
   }
 
-  const price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  // Angalia bidhaa za VIP pekee
+  if (product.isVipOnly && !isVip) {
+    const text = lang === 'sw'
+      ? `👑 *Maudhui Maalum ya VIP\\!*\n\n` +
+        `Bidhaa hii inapatikana kwa wanachama wa *VIP* pekee\\. Jiunge na VIP ili kupata punguzo na bidhaa hizi\\.`
+      : `👑 *VIP Exclusive Content\\!*\n\n` +
+        `This product is only available for *VIP* members\\. Please join VIP to proceed\\.`
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '👑 Jiunge na VIP' : '👑 Join VIP', 'store:vip:join_init')],
+      [Markup.button.callback(lang === 'sw' ? '◀️ Rudi kwenye Bidhaa' : '◀️ Back to Product', `store:product:${productId}`)],
+    ])
+
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+    return
+  }
+
+  let price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  let vipText = ''
+
+  if (isVip) {
+    const originalPrice = price
+    const vipDiscount = config.vip?.discountPercent || 15
+    price = Math.round(price * (1 - vipDiscount / 100))
+    vipText = lang === 'sw'
+      ? `\n👑 *VIP Discount Applied \\(${vipDiscount}%\\):* ~~TZS ${originalPrice.toLocaleString('en-US')}~~ TZS *${price.toLocaleString('en-US')}*`
+      : `\n👑 *VIP Discount Applied \\(${vipDiscount}%\\):* ~~TZS ${originalPrice.toLocaleString('en-US')}~~ TZS *${price.toLocaleString('en-US')}*`
+  }
+
   ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId } }
 
   const text = lang === 'sw'
-    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\n💫 Bei: *TZS ${price.toLocaleString('en-US')}*\n\nJe, unataka kuendelea kulipia kupitia salio la Wallet yako?`
-    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\n💫 Price: *TZS ${price.toLocaleString('en-US')}*\n\nDo you want to proceed with paying from your Wallet balance?`
+    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nJe, unataka kuendelea kulipia kupitia salio la Wallet yako?`
+    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nDo you want to proceed with paying from your Wallet balance?`
 
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
@@ -358,7 +479,7 @@ async function handleCheckoutWizard(ctx) {
 async function getDbUser(telegramId) {
   return prisma.user.findUnique({
     where: { telegramId: BigInt(telegramId) },
-    select: { id: true },
+    select: { id: true, isVip: true },
   })
 }
 

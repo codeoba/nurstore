@@ -175,49 +175,75 @@ async function showProfile(ctx) {
     return
   }
 
+  // Angalia kama muda wa VIP umeisha
+  const { checkVipExpiry } = require('../services/vipService')
+  await checkVipExpiry(user.id).catch(() => {})
+
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: {
+      _count: { select: { orders: true, referred: true } },
+    },
+  })
+
   const paidOrders = await prisma.order.count({
-    where: { userId: user.id, status: { in: ['paid', 'delivered'] } },
+    where: { userId: updatedUser.id, status: { in: ['paid', 'delivered'] } },
   })
 
   const botUsername = (await ctx.telegram.getMe()).username
+
+  const vipStatusSw = updatedUser.isVip
+    ? `👑 *Uanachama:* VIP \\(Inaisha: ${escapeMarkdown(updatedUser.vipExpiresAt.toLocaleDateString('sw-TZ'))}\\)`
+    : `👤 *Uanachama:* Kawaida`
+
+  const vipStatusEn = updatedUser.isVip
+    ? `👑 *Membership:* VIP \\(Expires: ${escapeMarkdown(updatedUser.vipExpiresAt.toLocaleDateString('en-US'))}\\)`
+    : `👤 *Membership:* Standard`
 
   const text = lang === 'sw'
     ? [
         `👤 *Wasifu Wako*`,
         ``,
-        `🆔 ID: \`${user.telegramId}\``,
-        `📛 Jina: ${escapeMarkdown(user.fullName || user.username || 'Bila jina')}`,
+        `🆔 ID: \`${updatedUser.telegramId}\``,
+        `📛 Jina: ${escapeMarkdown(updatedUser.fullName || updatedUser.username || 'Bila jina')}`,
+        vipStatusSw,
         ``,
         `📊 *Takwimu Zangu:*`,
         `🛍️ Ununuzi: ${paidOrders}`,
-        `💰 Komisheni ya Referral: TZS ${user.commissionEarned.toLocaleString('en-US')}`,
-        `👥 Walioalikwa: ${user._count.referred}`,
+        `💰 Komisheni ya Referral: TZS ${updatedUser.commissionEarned.toLocaleString('en-US')}`,
+        `👥 Walioalikwa: ${updatedUser._count.referred}`,
         ``,
         `🔗 *Link Yangu ya Referral:*`,
-        `\`https://t\\.me/${botUsername}?start=ref_${user.referralCode}\``,
+        `\`https://t\\.me/${botUsername}?start=ref_${updatedUser.referralCode}\``,
         ``,
         `_Shiriki link hii\\. Kila mtu anayenunua kupitia link yako, utapata TZS ${config.referral.commissionTzs.toLocaleString('en-US')} kwenye wallet yako\\!_`,
       ].join('\n')
     : [
         `👤 *My Profile*`,
         ``,
-        `🆔 ID: \`${user.telegramId}\``,
-        `📛 Name: ${escapeMarkdown(user.fullName || user.username || 'No name')}`,
+        `🆔 ID: \`${updatedUser.telegramId}\``,
+        `📛 Name: ${escapeMarkdown(updatedUser.fullName || updatedUser.username || 'No name')}`,
+        vipStatusEn,
         ``,
         `📊 *My Stats:*`,
         `🛍️ Purchases: ${paidOrders}`,
-        `💰 Referral Commission: TZS ${user.commissionEarned.toLocaleString('en-US')}`,
-        `👥 Referred Users: ${user._count.referred}`,
+        `💰 Referral Commission: TZS ${updatedUser.commissionEarned.toLocaleString('en-US')}`,
+        `👥 Referred Users: ${updatedUser._count.referred}`,
         ``,
         `🔗 *My Referral Link:*`,
-        `\`https://t\\.me/${botUsername}?start=ref_${user.referralCode}\``,
+        `\`https://t\\.me/${botUsername}?start=ref_${updatedUser.referralCode}\``,
         ``,
         `_Share this link\\. Every purchase earns you TZS ${config.referral.commissionTzs.toLocaleString('en-US')} in your wallet\\!_`,
       ].join('\n')
 
+  const vipBtnLabel = updatedUser.isVip
+    ? (lang === 'sw' ? '👑 Ongeza Muda wa VIP' : '👑 Extend VIP')
+    : (lang === 'sw' ? '👑 Jiunge na VIP' : '👑 Join VIP')
+
   const keyboard = Markup.inlineKeyboard([
     [
       Markup.button.callback(lang === 'sw' ? '💳 Wallet Yangu' : '💳 My Wallet', 'store:wallet'),
+      Markup.button.callback(vipBtnLabel, 'store:vip:join_init'),
     ],
     [
       Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back to Menu', 'store:menu')
