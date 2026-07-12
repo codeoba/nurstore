@@ -22,8 +22,8 @@ function registerWalletHandlers(bot) {
     const lang = ctx.session?.language || 'sw'
 
     const text = lang === 'sw'
-      ? '💳 *Weka Salio — Chagua Kiasi:*\n\nChagua kiasi unachotaka kuongeza kwenye Wallet yako, au uandike kiasi kingine kwa kutuma ujumbe wa nambari (mfano: 15000):'
-      : '💳 *Top Up — Select Amount:*\n\nSelect the amount you want to add to your Wallet, or type another amount by sending a number (example: 15000):'
+      ? '💳 *Weka Salio \\- Chagua Kiasi:*\n\nChagua kiasi unachotaka kuongeza kwenye Wallet yako, au uandike kiasi kingine kwa kutuma ujumbe wa nambari \\(mfano: 15000\\):'
+      : '💳 *Top Up \\- Select Amount:*\n\nSelect the amount you want to add to your Wallet, or type another amount by sending a number \\(example: 15000\\):'
 
     ctx.session.userWizard = { scene: 'wallet_deposit', step: 'amount', data: {} }
 
@@ -231,9 +231,9 @@ function registerWalletHandlers(bot) {
       const clientName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
       await notifyAdmins(
         ctx.telegram,
-        `👑 *Mwanachama Mpya wa VIP!*\n\n` +
-        `👤 Jina: ${clientName}\n` +
-        `📅 Expire date: ${expDate}\n` +
+        `👑 *Mwanachama Mpya wa VIP\\!*\n\n` +
+        `👤 Jina: ${escapeMarkdown(clientName)}\n` +
+        `📅 Expire date: ${escapeMarkdown(expDate)}\n` +
         `💰 Kiasi kilicholipwa: TZS ${(config.vip.priceTzs || 10000).toLocaleString('en-US')}`
       ).catch(() => {})
 
@@ -357,11 +357,11 @@ async function processBinanceDeposit(ctx, amountTzs, lang = 'sw') {
     })
 
     const text = lang === 'sw'
-      ? `🪙 *Binance Pay Deposit — TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
+      ? `🪙 *Binance Pay Deposit \\- TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
         `Kiasi kinachotakiwa kulipwa: *${orderData.amountUsdt} USDT*\n\n` +
         `Fungua link hapo chini au bofya kitufe ili kulipa moja kwa moja kupitia programu ya Binance\\.\n\n` +
         `⚠️ *MUHIMU:* Baada ya kulipa na kuona muamala umefanikiwa kwenye Binance, bonyeza kitufe cha *Thibitisha Malipo* hapo chini kukamilisha na kupokea salio la Wallet yako\\.`
-      : `🪙 *Binance Pay Deposit — TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
+      : `🪙 *Binance Pay Deposit \\- TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
         `Amount to pay: *${orderData.amountUsdt} USDT*\n\n` +
         `Open the link below or click the button to pay directly via the Binance app\\.\n\n` +
         `⚠️ *IMPORTANT:* After paying and seeing a successful transaction on Binance, click the *Confirm Payment* button below to credit your Wallet\\.`
