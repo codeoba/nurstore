@@ -562,12 +562,12 @@ async function showProductConfirmation(ctx, wizard) {
     ``,
     `📦 Jina: *${escapeMarkdown(d.name)}*`,
     `📝 Aina: ${typeIcons[d.productType]} ${d.productType}`,
-    `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} \\(approx\\. $${d.priceUsd.toFixed(2)}\\)`,
-    `📊 Stock: ${d.stock === null ? 'Unlimited' : d.stock}`,
+    `💰 Bei: TZS ${d.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(d.priceUsd.toFixed(2))}\\)`,
+    `📊 Stock: ${escapeMarkdown(String(d.stock === null ? 'Unlimited' : d.stock))}`,
     `👑 VIP Only: ${d.isVipOnly ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     `🔜 Pre\\-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
-    d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}...` : '',
+    d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}\\.\\.\\.` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
     d.thumbnailFileId ? `🖼️ Picha: ✅` : `🖼️ Picha: ❌`,
     ``,
@@ -592,7 +592,7 @@ async function saveProduct(ctx, wizard) {
       `✅ *Bidhaa imeundwa kwa mafanikio\\!*\n\n` +
       `📦 *${escapeMarkdown(product.name)}*\n` +
       `🆔 ID: ${product.id}\n` +
-      `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${product.priceUsd.toFixed(2)}\\)`,
+      `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(product.priceUsd.toFixed(2))}\\)`,
       { parse_mode: 'MarkdownV2', ...backToProductsKeyboard() }
     )
   } catch (err) {
