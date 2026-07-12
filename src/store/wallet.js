@@ -261,10 +261,10 @@ async function showWalletMenu(ctx) {
   let text = lang === 'sw'
     ? `💳 *Wallet Yangu ya TZS*\n\n` +
       `Salio la sasa: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
-      `📜 *Historia ya Miamala (Mwisho 5):*\n`
+      `📜 *Historia ya Miamala \\(Mwisho 5\\):*\n`
     : `💳 *My TZS Wallet*\n\n` +
       `Current Balance: *TZS ${wallet.balance.toLocaleString('en-US')}*\n\n` +
-      `📜 *Transaction History (Last 5):*\n`
+      `📜 *Transaction History \\(Last 5\\):*\n`
 
   if (txs.length === 0) {
     text += lang === 'sw' ? '_Hakuna miamala bado\\._\n' : '_No transactions yet\\._\n'
@@ -280,7 +280,7 @@ async function showWalletMenu(ctx) {
       const type = typeNames[t.type] || t.type
       const sign = t.amount > 0 ? '➕' : '➖'
       const date = t.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      text += `• \`${date}\` — ${type}: *${sign} TZS ${Math.abs(t.amount).toLocaleString('en-US')}*\n`
+      text += `• \`${escapeMarkdown(date)}\` — ${escapeMarkdown(type)}: *${sign} TZS ${Math.abs(t.amount).toLocaleString('en-US')}*\n`
     }
   }
 
