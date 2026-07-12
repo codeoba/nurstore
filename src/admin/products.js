@@ -265,8 +265,8 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'description': {
-      if (!text || text.length < 10) {
-        await ctx.reply('⚠️ Maelezo lazima yawe na herufi angalau 10. Jaribu tena:')
+      if (!text || text.length < 2) {
+        await ctx.reply('⚠️ Maelezo lazima yawe na herufi angalau 2. Jaribu tena:')
         return true
       }
       data.description = sanitizeText(text).substring(0, 4000)
@@ -297,22 +297,29 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'price': {
-      const usdRate = config.currency.usdToTzsRate || 2600
+      const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
       let priceTzs, priceUsd
 
-      if (text.startsWith('$') || text.endsWith('$')) {
-        const clean = text.replace('$', '').trim()
-        const val = parseFloat(clean)
+      // Clean the input text loosely
+      let cleanText = text.toLowerCase()
+        .replace(/tzs|tsh|shs|shilingi|sh|\/=|\//g, '')
+        .trim()
+
+      const isUsd = cleanText.includes('$') || text.includes('$')
+      cleanText = cleanText.replace(/[$,\s]/g, '')
+
+      if (isUsd) {
+        const val = parseFloat(cleanText)
         if (isNaN(val) || val <= 0) {
-          await ctx.reply('⚠️ Andika bei ya USD iliyo sahihi, mfano: $5')
+          await ctx.reply('⚠️ Andika bei ya USD iliyo sahihi, mfano: $5 au 5$')
           return true
         }
         priceUsd = val
         priceTzs = Math.round(priceUsd * usdRate)
       } else {
-        const val = parseInt(text.replace(/,/g, '').trim(), 10)
+        const val = parseInt(cleanText, 10)
         if (isNaN(val) || val <= 0) {
-          await ctx.reply('⚠️ Andika bei sahihi ya TZS (mfano: 15000) au USD (mfano: $5):')
+          await ctx.reply('⚠️ Andika bei sahihi ya TZS (mfano: 150000 au 150,000) au USD (mfano: $5):')
           return true
         }
         priceTzs = val
@@ -465,7 +472,8 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'vip_only': {
-      data.isVipOnly = (text?.toLowerCase() === 'ndiyo' || text?.toLowerCase() === 'yes')
+      const input = text?.toLowerCase()?.trim()
+      data.isVipOnly = (input === 'ndiyo' || input === 'yes' || input === '1')
       wizard.step = 'pre_order'
       await ctx.reply(
         `❓ Je, hii ni Pre\\-Order \\(mteja kulipia kabla bidhaa haijawa rasmi\\)?\n\n` +
@@ -476,7 +484,8 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     }
 
     case 'pre_order': {
-      data.isPreOrder = (text?.toLowerCase() === 'ndiyo' || text?.toLowerCase() === 'yes')
+      const input = text?.toLowerCase()?.trim()
+      data.isPreOrder = (input === 'ndiyo' || input === 'yes' || input === '1')
       await showProductConfirmation(ctx, wizard)
       return true
     }
