@@ -444,6 +444,15 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       return true
     }
 
+    case 'stock': {
+      let stock = null
+      if (text && text.toLowerCase() !== 'unlimited') {
+        stock = parseNumber(text)
+        if (stock === null || stock < 0) {
+          await ctx.reply('⚠️ Andika nambari ya stock au "unlimited"')
+          return true
+        }
+      }
       data.stock = stock
 
       wizard.step = 'vip_only'
