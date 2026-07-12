@@ -1,7 +1,6 @@
 'use strict'
 
 const { prisma } = require('../database')
-const { debitWallet } = require('./walletService')
 const logger = require('../utils/logger')
 const config = require('../config')
 

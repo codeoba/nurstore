@@ -8,6 +8,7 @@ const { getOrCreateWallet } = require('../services/walletService')
 const { validateCoupon } = require('../services/referralService')
 const { deliverOrder } = require('../services/deliveryService')
 const { checkoutRateLimit } = require('../middlewares/rateLimit')
+const config = require('../config')
 const logger = require('../utils/logger')
 
 function registerCheckoutHandlers(bot) {
