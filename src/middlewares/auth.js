@@ -143,9 +143,6 @@ async function autoRegisterUser(ctx, next) {
   const from = ctx.from
   if (!from || from.is_bot) return next()
 
-  // Ruka kwa admin commands
-  if (config.admin.ids.includes(from.id)) return next()
-
   try {
     const referralCode = generateReferralCode(from.id)
 
