@@ -71,6 +71,11 @@ const config = {
       apiSecret: optional('BINANCE_API_SECRET', ''),
       baseUrl: optional('BINANCE_BASE_URL', 'https://bpay.binanceapi.com'),
       usdtToTzsRate: parseInt(optional('USDT_TO_TZS_RATE', '2600'), 10),
+      payId: optional('BINANCE_PAY_ID', '263344433'),
+    },
+    usdt: {
+      trc20Address: optional('USDT_TRC20_ADDRESS', 'TYt9SJtz3cJhnq5wgEe3N9H7fa48GvKhx5'),
+      bep20Address: optional('USDT_BEP20_ADDRESS', '0x0bacd562860a87f8fc54be1dec52fba6c47f7ed2'),
     },
   },
 

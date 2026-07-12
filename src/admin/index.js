@@ -159,7 +159,100 @@ function registerAdminRouter(bot) {
       await ctx.reply(`❌ Hitilafu: ${err.message}`)
     }
   })
+
+  // ─── Deposit Approval/Rejection ───────────────────────────────
+  bot.action(/^admin:deposit:(approve|reject):(\d+)$/, isAdmin, async (ctx) => {
+    const action = ctx.match[1]
+    const txId = parseInt(ctx.match[2])
+
+    await ctx.answerCbQuery(action === 'approve' ? '✅ Inaidhinisha...' : '❌ Inakataa...')
+
+    try {
+      const { creditWallet } = require('../services/walletService')
+
+      // Pata transaction
+      const tx = await prisma.walletTransaction.findUnique({
+        where: { id: txId },
+        include: { wallet: { include: { user: { select: { telegramId: true, language: true, id: true } } } } },
+      })
+
+      if (!tx) {
+        await ctx.reply('❌ Transaction haikupatikana.')
+        return
+      }
+
+      if (tx.status !== 'pending') {
+        await ctx.editMessageText(
+          `⚠️ *Transaction hii tayari imeshughulikiwa\\!*\n\nHali ya sasa: *${escapeMarkdown(tx.status)}*`,
+          { parse_mode: 'MarkdownV2' }
+        )
+        return
+      }
+
+      const adminName = escapeMarkdown(ctx.from.first_name || 'Admin')
+
+      if (action === 'approve') {
+        // Ongeza salio moja kwa moja bila kuunda transaction mpya
+        await prisma.$transaction([
+          prisma.wallet.update({
+            where: { id: tx.walletId },
+            data: { balance: { increment: tx.amount } },
+          }),
+          prisma.walletTransaction.update({
+            where: { id: txId },
+            data: { status: 'completed', completedAt: new Date() },
+          }),
+        ])
+
+        // Ripoti Admin
+        await ctx.editMessageText(
+          `✅ *Deposit IMEIDHINISHWA\\!*\n\n` +
+          `💰 Kiasi: TZS *${tx.amount.toLocaleString('en-US')}*\n` +
+          `🔑 Ref: *${escapeMarkdown(tx.referenceId || 'N/A')}*\n` +
+          `👨\u200d💼 Imeidhinishwa na: ${adminName}\n\n` +
+          `_Salio la mteja limejazwa kiotomatiki\\._`,
+          { parse_mode: 'MarkdownV2' }
+        )
+
+        // Notify Customer
+        const user = tx.wallet.user
+        const notifyMsg = user.language === 'sw'
+          ? `✅ *Salio Limewekwa\\!*\n\nTZS *${tx.amount.toLocaleString('en-US')}* imeongezwa kwenye Wallet yako\\. Unaweza kununua bidhaa sasa\\!`
+          : `✅ *Balance Added\\!*\n\nTZS *${tx.amount.toLocaleString('en-US')}* has been credited to your Wallet\\. You can now purchase products\\!`
+
+        await ctx.telegram.sendMessage(Number(user.telegramId), notifyMsg, { parse_mode: 'MarkdownV2' }).catch(() => {})
+
+      } else {
+        // Kataa — sasisha status
+        await prisma.walletTransaction.update({
+          where: { id: txId },
+          data: { status: 'failed' },
+        })
+
+        // Ripoti Admin
+        await ctx.editMessageText(
+          `❌ *Deposit IMEKATALIWA\\.*\n\n` +
+          `💰 Kiasi: TZS *${tx.amount.toLocaleString('en-US')}*\n` +
+          `🔑 Ref: *${escapeMarkdown(tx.referenceId || 'N/A')}*\n` +
+          `👨\u200d💼 Imekataliwa na: ${adminName}`,
+          { parse_mode: 'MarkdownV2' }
+        )
+
+        // Notify Customer
+        const user = tx.wallet.user
+        const notifyMsg = user.language === 'sw'
+          ? `❌ *Ombi la Weka Salio Limekataliwa\\.*\n\nOmbi lako la kuongeza TZS *${tx.amount.toLocaleString('en-US')}* haukuidhinishwa\\. Angalia upya Binance Order ID au TxID uliyotuma kisha jaribu tena, au wasiliana na msaada wetu\\.`
+          : `❌ *Deposit Request Rejected\\.*\n\nYour request to add TZS *${tx.amount.toLocaleString('en-US')}* was not approved\\. Please verify your Binance Order ID or TxID and try again, or contact support\\.`
+
+        await ctx.telegram.sendMessage(Number(user.telegramId), notifyMsg, { parse_mode: 'MarkdownV2' }).catch(() => {})
+      }
+    } catch (err) {
+      logger.error('Failed to process deposit approval', { error: err.message, txId })
+      await ctx.reply(`❌ Hitilafu: ${err.message}`)
+    }
+  })
 }
+
 
 // ─── Coupon Handlers ─────────────────────────────────────────
 

@@ -115,100 +115,22 @@ function registerWalletHandlers(bot) {
     await askGateway(ctx, amountTzs, lang)
   })
 
-  // ─── Select Gateway Callback ──────────────────────────────────
-  bot.action(/^store:wallet:gateway:(telegram|binance):(\d+)$/, async (ctx) => {
+  // ─── Select Gateway Callback (Manual Methods) ───────────────────
+  bot.action(/^store:wallet:gateway:(binance_manual|usdt_manual|cryptobot_manual):(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery()
     const gateway = ctx.match[1]
     const amountTzs = parseInt(ctx.match[2])
     const lang = ctx.session?.language || 'sw'
 
-    ctx.session.userWizard = null // Maliza wizard
-
-    if (gateway === 'telegram') {
-      try {
-        await sendDepositInvoice(ctx, ctx.from.id, amountTzs)
-      } catch (err) {
-        logger.error('Failed to send telegram deposit invoice', { error: err.message })
-        await ctx.reply(lang === 'sw' ? '❌ Njia hii haipatikani kwa sasa.' : '❌ This payment method is currently unavailable.')
-      }
-    } else if (gateway === 'binance') {
-      await processBinanceDeposit(ctx, amountTzs, lang)
+    if (gateway === 'cryptobot_manual') {
+      await ctx.answerCbQuery(lang === 'sw' ? '🤖 CryptoBot inakuja hivi karibuni!' : '🤖 CryptoBot coming soon!', { show_alert: true })
+      return
     }
-  })
 
-  // ─── Verify Binance Payment Callback ──────────────────────────
-  bot.action(/^store:wallet:confirm_binance:(DEP\w+)$/, async (ctx) => {
-    const merchantTradeNo = ctx.match[1]
-    const lang = ctx.session?.language || 'sw'
-
-    await ctx.answerCbQuery(lang === 'sw' ? '🔍 Inakagua malipo...' : '🔍 Checking payment...')
-
-    try {
-      // 1. Kagua kama tayari tumesha-credit transaction hii
-      const existingTx = await prisma.walletTransaction.findFirst({
-        where: { referenceId: merchantTradeNo, status: 'completed' },
-      })
-
-      if (existingTx) {
-        await ctx.reply(lang === 'sw' ? '✅ Muamala huu tayari ulikamilika na salio limeongezwa.' : '✅ This transaction was already completed and credited.')
-        return
-      }
-
-      // 2. Query Binance Pay API
-      const result = await queryBinanceOrder(merchantTradeNo)
-
-      if (result.status === 'PAID') {
-        const user = await prisma.user.findUnique({
-          where: { telegramId: BigInt(ctx.from.id) },
-          select: { id: true },
-        })
-
-        // Kiasi cha TZS kipo kwenye data ya metadata ya order au tunakipata kwa kupiga hesabu kurudi
-        // Kwenye create tulihifadhi user na kiasi. Hebu tutafute transaction ya kwanza (pending) ili kupata TZS halisi
-        const pendingTx = await prisma.walletTransaction.findFirst({
-          where: { referenceId: merchantTradeNo, status: 'pending' },
-        })
-
-        const amountTzs = pendingTx ? pendingTx.amount : Math.round(result.raw.totalFee * (config.payments.binance.usdtToTzsRate || 2600))
-
-        // Credit Wallet
-        await creditWallet(
-          user.id,
-          amountTzs,
-          'deposit',
-          'binance_pay',
-          merchantTradeNo,
-          result.raw
-        )
-
-        // Sasisha pending transaction kama ipo
-        if (pendingTx) {
-          await prisma.walletTransaction.update({
-            where: { id: pendingTx.id },
-            data: { status: 'completed', completedAt: new Date() },
-          }).catch(() => {})
-        }
-
-        await ctx.reply(
-          lang === 'sw'
-            ? `🎉 *Hongera\\!* Salio la *TZS ${amountTzs.toLocaleString('en-US')}* limeongezwa kwenye Wallet yako kupitia Binance Pay\\.`
-            : `🎉 *Congratulations\\!* *TZS ${amountTzs.toLocaleString('en-US')}* has been credited to your Wallet via Binance Pay\\.`,
-          { parse_mode: 'MarkdownV2' }
-        )
-
-        // Sasisha menu ya wallet
-        await showWalletMenu(ctx).catch(() => {})
-      } else {
-        await ctx.reply(
-          lang === 'sw'
-            ? `❌ Malipo hayajapokelewa bado\\. Hali: *${result.status}*\\.\n\nBonyeza tena kitufe cha thibitisha baada ya kukamilisha muamala kwenye programu ya Binance\\.`
-            : `❌ Payment not received yet\\. Status: *${result.status}*\\.\n\nClick the confirm button again after completing the transfer on Binance\\.`,
-          { parse_mode: 'MarkdownV2' }
-        )
-      }
-    } catch (err) {
-      logger.error('Failed to verify Binance payment', { error: err.message, merchantTradeNo })
-      await ctx.reply(lang === 'sw' ? '❌ Kushindwa kukagua muamala na Binance Pay. Jaribu tena.' : '❌ Failed to verify transaction with Binance Pay.')
+    if (gateway === 'binance_manual') {
+      await showBinanceManualDeposit(ctx, amountTzs, lang)
+    } else if (gateway === 'usdt_manual') {
+      await showUsdtManualDeposit(ctx, amountTzs, lang)
     }
   })
 
@@ -354,23 +276,120 @@ async function showWalletMenu(ctx) {
  */
 async function askGateway(ctx, amountTzs, lang = 'sw') {
   const text = lang === 'sw'
-    ? `💰 *Kiasi cha kuweka:* TZS *${amountTzs.toLocaleString('en-US')}*\n\nChagua njia ya malipo:`
-    : `💰 *Amount to Deposit:* TZS *${amountTzs.toLocaleString('en-US')}*\n\nChoose payment gateway:`
+    ? `💳 *Kuongeza Salio*\n\nChagua njia ya malipo:`
+    : `💳 *Top Up Wallet*\n\nChoose a payment method:`
 
   const keyboard = Markup.inlineKeyboard([
     [
       Markup.button.callback(
-        lang === 'sw' ? '💳 Kadi ya Bank / Simu' : '💳 Bank Card / Mobile Money',
-        `store:wallet:gateway:telegram:${amountTzs}`
+        lang === 'sw' ? '🟡 Weka kwa Binance Pay' : '🟡 Top Up with Binance Pay',
+        `store:wallet:gateway:binance_manual:${amountTzs}`
       ),
     ],
     [
       Markup.button.callback(
-        lang === 'sw' ? '🪙 Binance Pay (USDT)' : '🪙 Binance Pay (USDT)',
-        `store:wallet:gateway:binance:${amountTzs}`
+        lang === 'sw' ? '💎 Weka kwa USDT' : '💎 Top Up with USDT',
+        `store:wallet:gateway:usdt_manual:${amountTzs}`
       ),
     ],
-    [Markup.button.callback(lang === 'sw' ? '◀️ Nyuma' : '◀️ Back', 'store:wallet:deposit_init')],
+    [
+      Markup.button.callback(
+        lang === 'sw' ? '🤖 Weka kwa CryptoBot (Hivi Karibuni)' : '🤖 Top Up with CryptoBot',
+        `store:wallet:gateway:cryptobot_manual:${amountTzs}`
+      ),
+    ],
+    [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Kwenye Wallet' : '◀️ Back to Wallet', 'store:wallet')],
+  ])
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  } else {
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  }
+}
+
+async function showBinanceManualDeposit(ctx, amountTzs, lang = 'sw') {
+  const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
+  const usdAmount = amountTzs / usdRate
+  const payId = config.payments?.binance?.payId || '263344433'
+
+  const text = lang === 'sw'
+    ? `🟡 *Top Up via Binance Pay*\n\n` +
+      `🔹 *Binance ID:* \`${payId}\`\n\n` +
+      `📌 *Steps:*\n` +
+      `1\\. Open Binance app \\-\\> Pay \\-\\> Send\n` +
+      `2\\. Enter the Binance ID above\n` +
+      `3\\. Choose USDT and amount: *${escapeMarkdown(usdAmount.toFixed(2))} USDT* \\(sawa na TZS ${amountTzs.toLocaleString('en-US')}\\)\n` +
+      `4\\. Confirm transfer\n` +
+      `5\\. Copy the **Order ID** and send it here\\.\n\n` +
+      `⏰ *Valid for 20 minutes and can only be used once\\.*\n\n` +
+      `*Example Order ID:* \`402117599683977216\`\n\n` +
+      `💵 Minimum deposit: *1 USDT*\n\n` +
+      `*Copy the Order ID and send it here:*`
+    : `🟡 *Top Up via Binance Pay*\n\n` +
+      `🔹 *Binance ID:* \`${payId}\`\n\n` +
+      `📌 *Steps:*\n` +
+      `1\\. Open Binance app \\-\\> Pay \\-\\> Send\n` +
+      `2\\. Enter the Binance ID above\n` +
+      `3\\. Choose USDT and amount: *${escapeMarkdown(usdAmount.toFixed(2))} USDT* \\(approx\\. TZS ${amountTzs.toLocaleString('en-US')}\\)\n` +
+      `4\\. Confirm transfer\n` +
+      `5\\. Copy the **Order ID** and send it here\\.\n\n` +
+      `⏰ *Valid for 20 minutes and can only be used once\\.*\n\n` +
+      `*Example Order ID:* \`402117599683977216\`\n\n` +
+      `💵 Minimum deposit: *1 USDT*\n\n` +
+      `*Copy the Order ID and send it here:*`
+
+  ctx.session.userWizard = {
+    scene: 'wallet_deposit_manual',
+    step: 'binance_order_id',
+    data: { amountTzs }
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'sw' ? '❌ Ghairi / Cancel' : '❌ Cancel', 'store:wallet')],
+  ])
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  } else {
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  }
+}
+
+async function showUsdtManualDeposit(ctx, amountTzs, lang = 'sw') {
+  const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
+  const usdAmount = amountTzs / usdRate
+  const trc20 = config.payments?.usdt?.trc20Address || 'TYt9SJtz3cJhnq5wgEe3N9H7fa48GvKhx5'
+  const bep20 = config.payments?.usdt?.bep20Address || '0x0bacd562860a87f8fc54be1dec52fba6c47f7ed2'
+
+  const text = lang === 'sw'
+    ? `💎 *Top Up via USDT*\n\n` +
+      `🔹 *TRC20 \\(USDT\\):* \`${trc20}\`\n` +
+      `🔹 *BEP20 \\(USDT\\):* \`${bep20}\`\n\n` +
+      `📌 *After sending the payment, send the bot the TxID (transaction hash) of your transfer\\.*\n\n` +
+      `⏰ *Valid for 20 minutes and can only be used once\\.*\n\n` +
+      `*Example TxID:* \`0x1234\\.\\.\\.abcd\` \\(64 chars\\)\n\n` +
+      `💵 Minimum deposit: *1 USDT*\n\n` +
+      `*Amount to send: ${escapeMarkdown(usdAmount.toFixed(2))} USDT* \\(approx\\. TZS ${amountTzs.toLocaleString('en-US')}\\)\n\n` +
+      `*Please send the TxID here:*`
+    : `💎 *Top Up via USDT*\n\n` +
+      `🔹 *TRC20 \\(USDT\\):* \`${trc20}\`\n` +
+      `🔹 *BEP20 \\(USDT\\):* \`${bep20}\`\n\n` +
+      `📌 *After sending the payment, send the bot the TxID (transaction hash) of your transfer\\.*\n\n` +
+      `⏰ *Valid for 20 minutes and can only be used once\\.*\n\n` +
+      `*Example TxID:* \`0x1234\\.\\.\\.abcd\` \\(64 chars\\)\n\n` +
+      `💵 Minimum deposit: *1 USDT*\n\n` +
+      `*Amount to send: ${escapeMarkdown(usdAmount.toFixed(2))} USDT* \\(approx\\. TZS ${amountTzs.toLocaleString('en-US')}\\)\n\n` +
+      `*Please send the TxID here:*`
+
+  ctx.session.userWizard = {
+    scene: 'wallet_deposit_manual',
+    step: 'usdt_txid',
+    data: { amountTzs }
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'sw' ? '❌ Cancel' : '❌ Cancel', 'store:wallet')],
   ])
 
   if (ctx.callbackQuery) {
@@ -381,83 +400,105 @@ async function askGateway(ctx, amountTzs, lang = 'sw') {
 }
 
 /**
- * Shughulikia Binance Pay order creation na kutoa malipo kwa mtumiaji
- */
-async function processBinanceDeposit(ctx, amountTzs, lang = 'sw') {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { telegramId: BigInt(ctx.from.id) },
-      select: { id: true },
-    })
-
-    const orderData = await createBinanceOrder(user.id, amountTzs)
-
-    // Weka pending transaction record ili tuifuatilie
-    const wallet = await getOrCreateWallet(user.id)
-    await prisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        amount: amountTzs,
-        type: 'deposit',
-        status: 'pending',
-        gateway: 'binance_pay',
-        referenceId: orderData.merchantTradeNo,
-      },
-    })
-
-    const text = lang === 'sw'
-      ? `🪙 *Binance Pay Deposit \\- TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
-        `Kiasi kinachotakiwa kulipwa: *${orderData.amountUsdt} USDT*\n\n` +
-        `Fungua link hapo chini au bofya kitufe ili kulipa moja kwa moja kupitia programu ya Binance\\.\n\n` +
-        `⚠️ *MUHIMU:* Baada ya kulipa na kuona muamala umefanikiwa kwenye Binance, bonyeza kitufe cha *Thibitisha Malipo* hapo chini kukamilisha na kupokea salio la Wallet yako\\.`
-      : `🪙 *Binance Pay Deposit \\- TZS ${amountTzs.toLocaleString('en-US')}*\n\n` +
-        `Amount to pay: *${orderData.amountUsdt} USDT*\n\n` +
-        `Open the link below or click the button to pay directly via the Binance app\\.\n\n` +
-        `⚠️ *IMPORTANT:* After paying and seeing a successful transaction on Binance, click the *Confirm Payment* button below to credit your Wallet\\.`
-
-    const keyboard = Markup.inlineKeyboard([
-      [Markup.button.url(lang === 'sw' ? '⚡ Lipia hapa (Binance)' : '⚡ Pay here (Binance)', orderData.checkoutUrl)],
-      [Markup.button.callback(lang === 'sw' ? '✅ Thibitisha Malipo' : '✅ Confirm Payment', `store:wallet:confirm_binance:${orderData.merchantTradeNo}`)],
-      [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', 'store:wallet')],
-    ])
-
-    if (ctx.callbackQuery) {
-      await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
-    } else {
-      await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
-    }
-  } catch (err) {
-    logger.error('Failed to process binance deposit', { error: err.message })
-    await ctx.reply(lang === 'sw' ? '❌ Hitilafu kuunda muamala wa Binance Pay. Jaribu tena.' : '❌ Error creating Binance Pay order. Try again.')
-  }
-}
-
-/**
  * Handle custom typed amount from user input
  * Inaitwa kwenye message router ya index
  */
 async function handleWalletDepositWizard(ctx) {
   const wizard = ctx.session?.userWizard
-  if (!wizard || wizard.scene !== 'wallet_deposit' || wizard.step !== 'amount') return false
+  if (!wizard) return false
 
   const text = ctx.message?.text?.trim()
-  const amountTzs = parseInt(text, 10)
   const lang = ctx.session?.language || 'sw'
 
-  if (isNaN(amountTzs) || amountTzs < 1000 || amountTzs > 1000000) {
+  // 1. Handle select amount
+  if (wizard.scene === 'wallet_deposit' && wizard.step === 'amount') {
+    const amountTzs = parseInt(text, 10)
+
+    if (isNaN(amountTzs) || amountTzs < 1000 || amountTzs > 1000000) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '⚠️ Tafadhali andika kiasi sahihi cha namba kati ya TZS 1,000 na 1,000,000:'
+          : '⚠️ Please type a valid number amount between TZS 1,000 and 1,000,000:'
+      )
+      return true
+    }
+
+    ctx.session.userWizard = { scene: 'wallet_deposit', step: 'gateway', data: { amountTzs } }
+    await askGateway(ctx, amountTzs, lang)
+    return true
+  }
+
+  // 2. Handle manual TxID / Order ID submission
+  if (wizard.scene === 'wallet_deposit_manual') {
+    const { amountTzs } = wizard.data
+    const { notifyAdmins } = require('../services/notificationService')
+
+    if (!text || text.length < 5) {
+      await ctx.reply(
+        lang === 'sw'
+          ? '⚠️ Tafadhali weka maelezo sahihi ya muamala wako:'
+          : '⚠️ Please enter valid transaction details:'
+      )
+      return true
+    }
+
+    ctx.session.userWizard = null // Maliza wizard
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true },
+    })
+
+    const wallet = await getOrCreateWallet(user.id)
+    const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
+    const usdAmount = amountTzs / usdRate
+
+    // Unda pending transaction record kwenye DB
+    const transaction = await prisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: amountTzs,
+        type: 'deposit',
+        status: 'pending',
+        gateway: wizard.step === 'binance_order_id' ? 'binance_pay_manual' : 'usdt_manual',
+        referenceId: text,
+      },
+    })
+
+    // Notify admins with Approve/Reject buttons
+    const clientName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(ctx.from.id)
+    const methodLabel = wizard.step === 'binance_order_id' ? 'Binance Pay' : 'USDT'
+    
+    await notifyAdmins(
+      ctx.telegram,
+      `💳 *Ombi la Weka Salio (Deposit Request)\\!*\n\n` +
+      `👤 Jina: ${escapeMarkdown(clientName)} \\(ID: \`${ctx.from.id}\`\\)\n` +
+      `💰 Kiasi: TZS *${amountTzs.toLocaleString('en-US')}* \\(approx\\. $${escapeMarkdown(usdAmount.toFixed(2))}\\)\n` +
+      `⚙️ Njia: *${methodLabel}*\n` +
+      `🔑 ${wizard.step === 'binance_order_id' ? 'Binance Order ID' : 'Blockchain TxID'}: \`${escapeMarkdown(text)}\``,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Kubali (Approve)', callback_data: `admin:deposit:approve:${transaction.id}` },
+              { text: '❌ Kataa (Reject)', callback_data: `admin:deposit:reject:${transaction.id}` },
+            ]
+          ]
+        }
+      }
+    ).catch(() => {})
+
     await ctx.reply(
       lang === 'sw'
-        ? '⚠️ Tafadhali andika kiasi sahihi cha namba kati ya TZS 1,000 na 1,000,000:'
-        : '⚠️ Please type a valid number amount between TZS 1,000 and 1,000,000:'
+        ? '✅ *Ombi lako limepokelewa\\!*\n\nWasimamizi wanakagua malipo yako sasa hivi\\. Utapokea ujumbe salio lako likishajazwa kwenye Wallet yako\\.'
+        : '✅ *Deposit Request Received\\!*\n\nOur team is verifying your payment\\. You will be notified as soon as your balance is updated\\.',
+      { parse_mode: 'MarkdownV2' }
     )
     return true
   }
 
-  wizard.step = 'gateway'
-  wizard.data.amountTzs = amountTzs
-
-  await askGateway(ctx, amountTzs, lang)
-  return true
+  return false
 }
 
 module.exports = {
