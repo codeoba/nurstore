@@ -267,11 +267,22 @@ async function showSingleProductInBrowse(ctx, product, meta) {
     ? formatTextProductPreview(product, lang)
     : formatProductCard(product, lang)
 
+  const activeDiscount = isDiscountActive(product)
+  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
+  const usd = activeDiscount ? product.discountUsd : product.priceUsd
+
+  const priceLabel = activeDiscount
+    ? `💰 TZS ${tzs.toLocaleString('en-US')} [🔥 ${lang === 'sw' ? 'PUNGUZO' : 'DISCOUNT'}]`
+    : `💰 TZS ${tzs.toLocaleString('en-US')} (approx. $${usd.toFixed(2)})`
+
   const buyBtnLabel = product.isPreOrder
     ? '🔜 Pre-Order'
     : (lang === 'sw' ? '⚡ Nunua Sasa' : '⚡ Buy Now')
 
   const productButtons = [
+    [
+      Markup.button.callback(priceLabel, `store:buy:${product.id}`)
+    ],
     [
       Markup.button.callback(
         lang === 'sw' ? '🛒 Ongeza Kikapuni' : '🛒 Add to Cart',
@@ -340,6 +351,14 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
 
   const stars = isDiscountActive(product) ? product.discountStars : product.priceStars
 
+  const activeDiscount = isDiscountActive(product)
+  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
+  const usd = activeDiscount ? product.discountUsd : product.priceUsd
+
+  const priceLabel = activeDiscount
+    ? `💰 TZS ${tzs.toLocaleString('en-US')} [🔥 ${lang === 'sw' ? 'PUNGUZO' : 'DISCOUNT'}]`
+    : `💰 TZS ${tzs.toLocaleString('en-US')} (approx. $${usd.toFixed(2)})`
+
   const text = product.productType === 'text_content'
     ? formatTextProductPreview(product, lang)
     : formatProductCard(product, lang)
@@ -360,11 +379,14 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
 
   const keyboard = Markup.inlineKeyboard([
     [
+      Markup.button.callback(priceLabel, `store:buy:${productId}`)
+    ],
+    [
       Markup.button.callback(lang === 'sw' ? '🛒 Ongeza Kikapuni' : '🛒 Add to Cart', `store:cart:add:${productId}`),
       Markup.button.callback(buyLabel, `store:buy:${productId}`),
     ],
     [
-      Markup.button.callback('❤️ Vipendwa', `store:wish:add:${productId}`),
+      Markup.button.callback(lang === 'sw' ? '❤️ Vipendwa' : '❤️ Wishlist', `store:wish:add:${productId}`),
       Markup.button.callback('⭐ Reviews', `store:reviews:${productId}`),
     ],
     [Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:browse')],
