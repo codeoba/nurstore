@@ -32,7 +32,7 @@ function formatProductCard(product, lang = 'sw') {
 
   // Features (kwa text_content bidhaa)
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `📋 *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
+    text += `📝 *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
@@ -93,7 +93,7 @@ function formatTextProductPreview(product, lang = 'sw') {
   text += `${escapeMarkdown(preview)}\n\n`
 
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `📋 *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
+    text += `📝 *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
