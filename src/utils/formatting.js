@@ -43,21 +43,6 @@ function formatProductCard(product, lang = 'sw') {
     text += '\n'
   }
 
-  // Bei
-  if (activeDiscount) {
-    text += `💰 *Bei:* ~~TZS ${product.priceTzs.toLocaleString('en-US')}~~ TZS *${tzs.toLocaleString('en-US')}*`
-    if (usd) {
-      text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
-    }
-    text += `\n🔥 *Punguzo\\!*\n`
-  } else {
-    text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
-    if (usd) {
-      text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
-    }
-    text += `\n`
-  }
-
   // Aina ya bidhaa
   const typeIcons = { file: '📁', text_content: '📄', subscription: '🔄' }
   text += `📦 *Aina:* ${typeIcons[product.productType] || '📦'} ${formatProductType(product.productType, lang)}\n`
@@ -108,11 +93,7 @@ function formatTextProductPreview(product, lang = 'sw') {
   const tzs = activeDiscount ? product.discountTzs : product.priceTzs
   const usd = activeDiscount ? product.discountUsd : product.priceUsd
 
-  text += `💰 *Bei:* TZS *${tzs.toLocaleString('en-US')}*`
-  if (usd) {
-    text += ` \\(approx\\. $${escapeMarkdown(usd.toFixed(2))}\\)`
-  }
-  text += `\n\n🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
+  text += `🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
 
   return text
 }
