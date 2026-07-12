@@ -20,6 +20,7 @@ async function getProductsPage(page = 1, filters = {}) {
     ...(filters.categoryId && { categoryId: filters.categoryId }),
     ...(filters.productType && { productType: filters.productType }),
     ...(filters.isFeatured !== undefined && { isFeatured: filters.isFeatured }),
+    ...(filters.isPreOrder !== undefined && { isPreOrder: filters.isPreOrder }),
     ...(filters.search && {
       OR: [
         { name: { contains: filters.search, mode: 'insensitive' } },

@@ -132,6 +132,14 @@ function registerOrdersHandlers(bot) {
       }
     )
   })
+
+  // ─── Refund Request Selection Menu ────────────────────────────
+  bot.action(/^store:refund:menu(:page:(\d+))?$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const page = ctx.match[2] ? parseInt(ctx.match[2]) : 1
+    const lang = ctx.session?.language || 'sw'
+    await showRefundOrdersList(ctx, page, lang)
+  })
 }
 
 // ─── Review Wizard Handler ────────────────────────────────────
@@ -416,4 +424,79 @@ async function handleRefundWizard(ctx) {
   }
 
   return true
+}
+
+async function showRefundOrdersList(ctx, page = 1, lang = 'sw') {
+  const user = await getDbUser(ctx.from.id)
+  if (!user) return
+
+  const limit = 5
+  const skip = (page - 1) * limit
+
+  // Find all orders that are paid or delivered, and do not have a refund request
+  const [orders, total] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        userId: user.id,
+        status: { in: ['paid', 'delivered'] },
+        refundRequest: null,
+      },
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        items: {
+          select: {
+            product: { select: { name: true } }
+          }
+        }
+      }
+    }),
+    prisma.order.count({
+      where: {
+        userId: user.id,
+        status: { in: ['paid', 'delivered'] },
+        refundRequest: null,
+      }
+    })
+  ])
+
+  if (orders.length === 0) {
+    const text = lang === 'sw'
+      ? '🔄 *Hakuna maagizo yanayoweza kuombewa refund kwa sasa\\.*'
+      : '🔄 *No orders eligible for refund at this time\\.*'
+    await ctx.editMessageText(text, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')]])
+    })
+    return
+  }
+
+  const title = lang === 'sw'
+    ? `🔄 *Chagua Order ya kuomba Refund:*`
+    : `🔄 *Select Order for Refund Request:*`
+
+  const buttons = orders.map(o => {
+    const itemsStr = o.items.map(i => i.product.name).join(', ').substring(0, 20)
+    return [
+      Markup.button.callback(
+        `#${o.id} — TZS ${o.totalTzs.toLocaleString('en-US')} (${itemsStr})`,
+        `store:refund:start:${o.id}`
+      )
+    ]
+  })
+
+  // Navigation row
+  const nav = []
+  const totalPages = Math.ceil(total / limit)
+  if (page > 1) nav.push(Markup.button.callback('◀️', `store:refund:menu:page:${page - 1}`))
+  if (page < totalPages) nav.push(Markup.button.callback('▶️', `store:refund:menu:page:${page + 1}`))
+  if (nav.length) buttons.push(nav)
+
+  buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')])
+
+  await ctx.editMessageText(title, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard(buttons),
+  })
 }

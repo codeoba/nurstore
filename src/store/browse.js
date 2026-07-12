@@ -126,6 +126,14 @@ function registerBrowseHandlers(bot) {
       ...Markup.inlineKeyboard(buttons),
     })
   })
+
+  // ─── Pre-Orders Router ────────────────────────────────────────
+  bot.action(/^store:preorders(:page:(\d+))?$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const page = ctx.match[2] ? parseInt(ctx.match[2]) : 1
+    const lang = ctx.session?.language || 'sw'
+    await showPreOrdersList(ctx, page, lang)
+  })
 }
 
 // ─── Search Handler ───────────────────────────────────────────
@@ -433,4 +441,41 @@ module.exports = {
   registerBrowseHandlers,
   handleSearchQuery,
   registerReviewHandlers,
+}
+
+async function showPreOrdersList(ctx, page = 1, lang = 'sw') {
+  const result = await getProductsPage(page, { isPreOrder: true })
+
+  if (result.products.length === 0) {
+    const text = lang === 'sw'
+      ? '🔜 *Hakuna Oda za Mapema (Pre-Orders) kwa sasa\\.*'
+      : '🔜 *No Pre-Orders available at this time\\.*'
+    await ctx.editMessageText(text, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Nyumbani' : '◀️ Home', 'store:menu')]])
+    })
+    return
+  }
+
+  const title = lang === 'sw'
+    ? `🔜 *Oda za Mapema (Pre-Orders) \\(${result.total}\\):*`
+    : `🔜 *Pre-Orders Available \\(${result.total}\\):*`
+
+  const buttons = result.products.map(p => {
+    const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
+    return [Markup.button.callback(`${p.name.substring(0, 22)} — TZS ${price.toLocaleString('en-US')}`, `store:product:${p.id}`)]
+  })
+
+  // Pagination row
+  const nav = []
+  if (result.hasPrev) nav.push(Markup.button.callback('◀️', `store:preorders:page:${page - 1}`))
+  if (result.hasNext) nav.push(Markup.button.callback('▶️', `store:preorders:page:${page + 1}`))
+  if (nav.length) buttons.push(nav)
+
+  buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back Home', 'store:menu')])
+
+  await ctx.editMessageText(title, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard(buttons),
+  })
 }

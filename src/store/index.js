@@ -117,37 +117,37 @@ async function showMainMenu(ctx) {
   const keyboard = lang === 'sw'
     ? Markup.inlineKeyboard([
         [
-          Markup.button.callback('🛍️ Angalia Bidhaa', 'store:browse'),
-          Markup.button.callback('🔍 Tafuta', 'store:search'),
+          Markup.button.callback('🛍️ Bidhaa', 'store:browse'),
+          Markup.button.callback('🔜 Oda za Mapema', 'store:preorders'),
         ],
         [
-          Markup.button.callback('🛒 Kikapu Changu', 'store:cart'),
+          Markup.button.callback('💰 Wallet Yangu', 'store:wallet'),
           Markup.button.callback('📦 Maagizo Yangu', 'store:orders'),
         ],
         [
-          Markup.button.callback('❤️ Vipendwa', 'store:wishlist'),
-          Markup.button.callback('👤 Wasifu Wangu', 'store:profile'),
+          Markup.button.callback('💬 Msaada', 'store:support'),
+          Markup.button.callback('👑 VIP', 'store:vip:join_init'),
         ],
         [
-          Markup.button.callback('💬 Msaada', 'store:support'),
+          Markup.button.callback('🔄 Omba Refund', 'store:refund:menu'),
           Markup.button.callback('🌐 Lugha', 'store:language'),
         ],
       ])
     : Markup.inlineKeyboard([
         [
-          Markup.button.callback('🛍️ Browse Products', 'store:browse'),
-          Markup.button.callback('🔍 Search', 'store:search'),
+          Markup.button.callback('🛍️ Products', 'store:browse'),
+          Markup.button.callback('🔜 Pre-Orders', 'store:preorders'),
         ],
         [
-          Markup.button.callback('🛒 My Cart', 'store:cart'),
+          Markup.button.callback('💰 Wallet', 'store:wallet'),
           Markup.button.callback('📦 My Orders', 'store:orders'),
         ],
         [
-          Markup.button.callback('❤️ Wishlist', 'store:wishlist'),
-          Markup.button.callback('👤 My Profile', 'store:profile'),
+          Markup.button.callback('💬 Support', 'store:support'),
+          Markup.button.callback('👑 VIP', 'store:vip:join_init'),
         ],
         [
-          Markup.button.callback('💬 Support', 'store:support'),
+          Markup.button.callback('🔄 Refund Request', 'store:refund:menu'),
           Markup.button.callback('🌐 Language', 'store:language'),
         ],
       ])
