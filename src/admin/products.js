@@ -427,7 +427,7 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       wizard.step = data.productType === 'text_content' ? 'preview_desc' :
                     data.productType === 'subscription' ? 'sub_days' : 'file_upload'
 
-      const displayPrice = `TZS ${priceTzs.toLocaleString('en-US')} (approx. $${priceUsd.toFixed(2)})`
+      const displayPrice = `TZS ${priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(priceUsd.toFixed(2))}\\)`
 
       if (data.productType === 'file') {
         await ctx.reply(
