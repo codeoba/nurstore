@@ -587,6 +587,107 @@ async function handleCheckoutWizard(ctx) {
   return true
 }
 
+// ─── Mobile Money Helpers ─────────────────────────────────────
+
+async function showMobileMoneyNetworks(ctx, productId, lang) {
+  const mm = config.payments?.mobileMoney || {}
+  const buttons = []
+
+  if (mm.mpesa)    buttons.push([Markup.button.callback('🔴 M-Pesa',       `store:buy:mm:mpesa:${productId}`)])
+  if (mm.airtel)   buttons.push([Markup.button.callback('🔵 Airtel Money', `store:buy:mm:airtel:${productId}`)])
+  if (mm.mix)      buttons.push([Markup.button.callback('🟡 Mix by Yas',   `store:buy:mm:mix:${productId}`)])
+  if (mm.halopesa) buttons.push([Markup.button.callback('🟢 HaloPesa',     `store:buy:mm:halopesa:${productId}`)])
+
+  if (buttons.length === 0) {
+    await ctx.answerCbQuery(
+      lang === 'sw' ? '⚠️ Malipo ya Mobile Money hayapatikani kwa sasa.' : '⚠️ Mobile Money not configured yet.',
+      { show_alert: true }
+    )
+    return
+  }
+
+  buttons.push([Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyuma' : '◀️ Back', `store:buy:${productId}`)])
+
+  const text = lang === 'sw'
+    ? `📱 *Chagua Mtandao wa Kulipia*\n\nTafadhali chagua mtandao utakaotumia kufanya malipo:`
+    : `📱 *Choose Mobile Money Network*\n\nPlease select the network you will use to pay:`
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard(buttons)
+  }).catch(() => {})
+}
+
+async function showMobileMoneyInstructions(ctx, userId, productId, network, lang) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isVip: true },
+  })
+
+  const isVip = user?.isVip || false
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId, isActive: true },
+  })
+
+  if (!product) {
+    await ctx.reply(lang === 'sw' ? '❌ Bidhaa haipatikani.' : '❌ Product not available.')
+    return
+  }
+
+  let price = isDiscountActive(product) ? product.discountTzs : product.priceTzs
+  if (isVip) {
+    const vipDiscount = config.vip?.discountPercent || 15
+    price = Math.round(price * (1 - vipDiscount / 100))
+  }
+
+  const mm = config.payments?.mobileMoney || {}
+  const number = mm[network]
+  if (!number) {
+    await ctx.answerCbQuery(lang === 'sw' ? '❌ Mtandao huu haujasanidiwa.' : '❌ This network is not configured.', { show_alert: true })
+    return
+  }
+
+  const networkNames = { mpesa: 'M-Pesa', airtel: 'Airtel Money', mix: 'Mix by Yas', halopesa: 'HaloPesa' }
+  const networkName = networkNames[network] || network
+
+  // Create order
+  const order = await createDirectOrder(userId, productId, null, 0, isVip)
+
+  ctx.session.userWizard = {
+    scene: 'mobilemoney_proof',
+    step: 'screenshot',
+    data: { orderId: order.id, productId, network, priceTzs: price }
+  }
+
+  const ownerName = mm.name || 'Duka'
+
+  const text = lang === 'sw'
+    ? `📱 *Lipia kwa ${networkName}*\n\n` +
+      `Tafadhali fuata hatua zifuatazo kukamilisha ununuzi wa *${escapeMarkdown(product.name)}*:\n\n` +
+      `1️⃣ Tuma kiasi cha *TZS ${price.toLocaleString('en-US')}* kwenda namba hii:\n` +
+      `📞 Namba: \`${escapeMarkdown(number)}\`\n` +
+      `👤 Jina: *${escapeMarkdown(ownerName)}*\n\n` +
+      `2️⃣ Baada ya kutuma, piga *screenshot* (picha) ya muamala ukionyesha umefanikiwa\\.\n\n` +
+      `3️⃣ Tuma picha hiyo hapa (reply kwenye chat hii) ili tuhakiki na kukutumia bidhaa yako\\.\n\n` +
+      `_Tunasubiri picha yako\\.\\.\\._`
+    : `📱 *Pay via ${networkName}*\n\n` +
+      `Please follow these steps to complete your purchase of *${escapeMarkdown(product.name)}*:\n\n` +
+      `1️⃣ Send exactly *TZS ${price.toLocaleString('en-US')}* to this number:\n` +
+      `📞 Number: \`${escapeMarkdown(number)}\`\n` +
+      `👤 Name: *${escapeMarkdown(ownerName)}*\n\n` +
+      `2️⃣ Take a *screenshot* of the successful transaction\\.\n\n` +
+      `3️⃣ Send the screenshot here in this chat so we can verify and deliver your product\\.\n\n` +
+      `_Waiting for your screenshot\\.\\.\\._`
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)]
+    ])
+  })
+}
+
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function getDbUser(telegramId) {
