@@ -28,6 +28,7 @@ function formatProductCard(product, lang = 'sw') {
   const usd = activeDiscount ? product.discountUsd : product.priceUsd
 
   let text = `*${escapeMarkdown(name)}*\n\n`
+  text += `💰 *${lang === 'sw' ? 'Bei' : 'Price'}:* TZS ${tzs.toLocaleString('en-US')}\n\n`
   text += `${escapeMarkdown(desc)}\n\n`
 
   // Features (kwa text_content bidhaa)
@@ -74,7 +75,11 @@ function formatTextProductPreview(product, lang = 'sw') {
   const name = lang === 'en' && product.nameEn ? product.nameEn : product.name
   const preview = product.previewDescription || product.description
 
+  const activeDiscount = isDiscountActive(product)
+  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
+
   let text = `📄 *${escapeMarkdown(name)}*\n\n`
+  text += `💰 *${lang === 'sw' ? 'Bei' : 'Price'}:* TZS ${tzs.toLocaleString('en-US')}\n\n`
   text += `${escapeMarkdown(preview)}\n\n`
 
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
@@ -89,8 +94,6 @@ function formatTextProductPreview(product, lang = 'sw') {
     text += '\n'
   }
 
-  const activeDiscount = isDiscountActive(product)
-  const tzs = activeDiscount ? product.discountTzs : product.priceTzs
   const usd = activeDiscount ? product.discountUsd : product.priceUsd
 
   text += `🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
