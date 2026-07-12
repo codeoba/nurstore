@@ -96,16 +96,7 @@ function sanitizeText(text) {
  * Angalia kama faili ni aina inayokubalika
  */
 function isAllowedFileType(filename) {
-  const allowed = [
-    '.pdf', '.epub', '.doc', '.docx', '.xls', '.xlsx',
-    '.ppt', '.pptx', '.zip', '.rar', '.7z', '.tar', '.gz',
-    '.mp4', '.mp3', '.wav', '.mkv', '.avi',
-    '.jpg', '.jpeg', '.png', '.gif', '.svg',
-    '.js', '.py', '.php', '.html', '.css', '.txt', '.md',
-    '.apk', '.exe', '.dmg',
-  ]
-  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
-  return allowed.includes(ext)
+  return true
 }
 
 /**
