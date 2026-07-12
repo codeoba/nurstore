@@ -296,6 +296,23 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       return true
     }
 
+    case 'new_category_name': {
+      if (!text || text.length < 2) {
+        await ctx.reply('⚠️ Jina la category lazima liwe na herufi angalau 2. Andika tena:')
+        return true
+      }
+      const category = await createCategory(sanitizeText(text))
+      data.categoryId = category.id
+
+      wizard.step = 'price'
+      await ctx.reply(
+        `✅ Category *${escapeMarkdown(category.name)}* imeundwa na kuchaguliwa\\!\n\n` +
+        `*Hatua 4/7:* Andika *bei* ya bidhaa \\(mfano: \`15000\` kwa TZS au \`$5.99\` kwa USD\\):`,
+        { parse_mode: 'MarkdownV2' }
+      )
+      return true
+    }
+
     case 'price': {
       const usdRate = config.payments?.binance?.usdtToTzsRate || 2600
       let priceTzs, priceUsd
