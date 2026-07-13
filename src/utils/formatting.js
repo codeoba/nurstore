@@ -27,13 +27,13 @@ function formatProductCard(product, lang = 'sw') {
   const tzs = activeDiscount ? product.discountTzs : product.priceTzs
   const usd = activeDiscount ? product.discountUsd : product.priceUsd
 
-  let text = `*${escapeMarkdown(name)}*\n\n`
-  text += `💰 *${lang === 'sw' ? 'Bei' : 'Price'}:* TZS ${tzs.toLocaleString('en-US')}\n\n`
-  text += `${escapeMarkdown(desc)}\n\n`
-
-  // Features (kwa text_content bidhaa)
+  let text = `🤖 *${escapeMarkdown(name)}*\n\n`
+  text += `📝 📋 *${lang === 'sw' ? 'Maelezo:' : 'Description:'}*\n\n`
+  text += `${escapeMarkdown(desc)}\n`
+  text += `━━━━━━━━━━━━━━━━━━━━\n`
+  
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `✍️ *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
+    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : 'What\\'s Included'}*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
@@ -41,31 +41,37 @@ function formatProductCard(product, lang = 'sw') {
       }
       text += `${escapeMarkdown(formattedFeat)}\n`
     }
-    text += '\n'
+    text += `━━━━━━━━━━━━━━━━━━━━\n`
   }
 
-  // Aina ya bidhaa
+  // Format type
   const typeIcons = { file: '📁', text_content: '📄', subscription: '🔄' }
-  text += `📦 *Aina:* ${typeIcons[product.productType] || '📦'} ${formatProductType(product.productType, lang)}\n`
+  const typeStr = formatProductType(product.productType, lang)
+  
+  text += `📦 *${lang === 'sw' ? 'Utapokea' : 'You Will Receive'}*\n`
+  text += `${typeIcons[product.productType] || '📧'} ${escapeMarkdown(typeStr)}\n`
+  text += `🚀 ${lang === 'sw' ? 'Inatumwa mara moja baada ya malipo' : 'Ready to Use After Activation'}\n`
+  text += `━━━━━━━━━━━━━━━━━━━━\n`
+  
+  text += `🚀 *${lang === 'sw' ? 'Kuhusu Oda Yako' : 'Activation'}*\n`
+  text += `_${escapeMarkdown(lang === 'sw' ? 'Oda yako inashughulikiwa mara moja unapolipa ili uipate bila kuchelewa.' : 'Your order is processed and activated immediately after purchase.')}_\n`
+  text += `━━━━━━━━━━━━━━━━━━━━\n`
 
-  // Stock
+  text += `⚠️ *${lang === 'sw' ? 'Muhimu (Important)' : 'Important'}*\n`
+  text += `• ${escapeMarkdown(lang === 'sw' ? 'Inatumwa kupitia Telegram' : 'Delivered via Telegram')}\n`
+  text += `• ${escapeMarkdown(lang === 'sw' ? 'Msaada upo masaa 24' : '24/7 Support included')}\n\n`
+
+  text += `🛡 *Warranty:* ${escapeMarkdown(lang === 'sw' ? 'Uhakika 100%' : '100% Guaranteed')}\n`
+  text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
+  
   if (product.stock !== null) {
-    text += `📊 *Iliyobaki:* ${product.stock} ${lang === 'sw' ? 'tu' : 'remaining'}\n`
+    text += `📦 *Stock:* ${product.stock}\n`
   }
+  
+  const sold = product.salesCount || 0
+  text += `📈 *Sold:* ${sold}\n`
 
   return text
-}
-
-/**
- * Format aina ya bidhaa
- */
-function formatProductType(type, lang = 'sw') {
-  const types = {
-    file: { sw: 'Faili la Download', en: 'Downloadable File' },
-    text_content: { sw: 'Maudhui ya Maandishi', en: 'Text Content' },
-    subscription: { sw: 'Usajili wa Mara kwa Mara', en: 'Subscription' },
-  }
-  return types[type]?.[lang] || type
 }
 
 /**
@@ -78,12 +84,13 @@ function formatTextProductPreview(product, lang = 'sw') {
   const activeDiscount = isDiscountActive(product)
   const tzs = activeDiscount ? product.discountTzs : product.priceTzs
 
-  let text = `📄 *${escapeMarkdown(name)}*\n\n`
-  text += `💰 *${lang === 'sw' ? 'Bei' : 'Price'}:* TZS ${tzs.toLocaleString('en-US')}\n\n`
-  text += `${escapeMarkdown(preview)}\n\n`
-
+  let text = `🤖 *${escapeMarkdown(name)}*\n\n`
+  text += `📝 📋 *${lang === 'sw' ? 'Maelezo:' : 'Description:'}*\n\n`
+  text += `${escapeMarkdown(preview)}\n`
+  text += `━━━━━━━━━━━━━━━━━━━━\n`
+  
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `✍️ *${lang === 'sw' ? 'Utakachopata' : 'What You Get'}:*\n`
+    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : 'What\\'s Included'}*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
@@ -91,12 +98,14 @@ function formatTextProductPreview(product, lang = 'sw') {
       }
       text += `${escapeMarkdown(formattedFeat)}\n`
     }
-    text += '\n'
+    text += `━━━━━━━━━━━━━━━━━━━━\n`
   }
 
-  const usd = activeDiscount ? product.discountUsd : product.priceUsd
+  text += `🔒 _${escapeMarkdown(lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment')}_\n\n`
 
-  text += `🔒 _${lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment'}_`
+  text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
+  const sold = product.salesCount || 0
+  text += `📈 *Sold:* ${sold}\n`
 
   return text
 }
