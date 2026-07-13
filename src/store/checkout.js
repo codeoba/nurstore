@@ -670,6 +670,7 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
   // Create order
   const order = await createDirectOrder(userId, productId, null, 0, isVip)
 
+  ctx.session = ctx.session || {}
   ctx.session.userWizard = {
     scene: 'mobilemoney_proof',
     step: 'screenshot',
@@ -679,7 +680,7 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
   const ownerName = mm.name || 'Duka'
 
   const text = lang === 'sw'
-    ? `📱 *Lipia kwa ${networkName}*\n\n` +
+    ? `📱 *Lipia kwa ${escapeMarkdown(networkName)}*\n\n` +
       `Tafadhali fuata hatua zifuatazo kukamilisha ununuzi wa *${escapeMarkdown(product.name)}*:\n\n` +
       `1️⃣ Tuma kiasi cha *TZS ${price.toLocaleString('en-US')}* kwenda namba hii:\n` +
       `📞 Namba: \`${escapeMarkdown(number)}\`\n` +
@@ -687,7 +688,7 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
       `2️⃣ Baada ya kutuma, piga *screenshot* \\(picha\\) au nakili *ID ya muamala*\\.\n\n` +
       `3️⃣ Tuma picha au meseji ya muamala hapa \\(reply kwenye chat hii\\) ili tuhakiki na kukutumia bidhaa yako\\.\n\n` +
       `⏳ _Una dakika 12 pekee kukamilisha malipo na kutuma uthibitisho kabla oda yako kufutwa\\._`
-    : `📱 *Pay via ${networkName}*\n\n` +
+    : `📱 *Pay via ${escapeMarkdown(networkName)}*\n\n` +
       `Please follow these steps to complete your purchase of *${escapeMarkdown(product.name)}*:\n\n` +
       `1️⃣ Send exactly *TZS ${price.toLocaleString('en-US')}* to this number:\n` +
       `📞 Number: \`${escapeMarkdown(number)}\`\n` +
