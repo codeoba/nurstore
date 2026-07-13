@@ -364,6 +364,19 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
     ? `💰 TZS ${tzs.toLocaleString('en-US')} [🔥 ${lang === 'sw' ? 'PUNGUZO' : 'DISCOUNT'}]`
     : `💰 TZS ${tzs.toLocaleString('en-US')} (approx. $${usd.toFixed(2)})`
 
+  // Live Sales Ticker calculation
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const recentSalesCount = await require('../database').prisma.orderItem.count({
+    where: {
+      productId,
+      order: {
+        status: { in: ['paid', 'delivered'] },
+        createdAt: { gte: sevenDaysAgo }
+      }
+    }
+  })
+  product.recentSalesCount = recentSalesCount
+
   const text = product.productType === 'text_content'
     ? formatTextProductPreview(product, lang)
     : formatProductCard(product, lang)
@@ -465,7 +478,23 @@ async function registerReviewHandlers(bot) {
     for (const r of reviews) {
       const name = r.user.username ? `@${r.user.username}` : r.user.fullName || 'Anonymous'
       const stars = '⭐'.repeat(r.rating) + '☆'.repeat(5 - r.rating)
-      text += `${stars} — ${escapeMarkdown(name)}\n`
+      
+      // Check if verified buyer
+      const hasPurchased = await require('../database').prisma.orderItem.findFirst({
+        where: {
+          productId,
+          order: {
+            userId: r.userId,
+            status: { in: ['paid', 'delivered', 'pre_ordered'] }
+          }
+        }
+      })
+      
+      const badge = hasPurchased 
+        ? (lang === 'sw' ? ' \\(✅ Mnunuzi Halisi\\)' : ' \\(✅ Verified Buyer\\)') 
+        : ''
+
+      text += `${stars} — ${escapeMarkdown(name)}${badge}\n`
       if (r.comment) text += `_${escapeMarkdown(r.comment)}_\n`
       text += '\n'
     }

@@ -58,6 +58,16 @@ function registerStoreRouter(bot) {
     await showProfile(ctx)
   })
 
+  // ─── About / Trust Score ────────────────────────────────────
+  bot.command('about', async (ctx) => {
+    await showAbout(ctx)
+  })
+
+  bot.action('store:about', async (ctx) => {
+    await ctx.answerCbQuery()
+    await showAbout(ctx)
+  })
+
   // ─── Language Selection ─────────────────────────────────────
   bot.action('store:language', async (ctx) => {
     await ctx.answerCbQuery()
@@ -146,7 +156,10 @@ async function showMainMenu(ctx) {
         ],
         [
           Markup.button.callback('🔄 Omba Refund', 'store:refund:menu'),
-          Markup.button.callback('🌐 Lugha', 'store:language'),
+          Markup.button.callback('ℹ️ Kuhusu Sisi', 'store:about'),
+        ],
+        [
+          Markup.button.callback('🌐 Lugha (Language)', 'store:language'),
         ],
       ])
     : Markup.inlineKeyboard([
@@ -164,6 +177,9 @@ async function showMainMenu(ctx) {
         ],
         [
           Markup.button.callback('🔄 Refund Request', 'store:refund:menu'),
+          Markup.button.callback('ℹ️ About Us', 'store:about'),
+        ],
+        [
           Markup.button.callback('🌐 Language', 'store:language'),
         ],
       ])

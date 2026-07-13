@@ -75,6 +75,12 @@ function formatProductCard(product, lang = 'sw') {
   const sold = product.salesCount || 0
   text += `📈 *Sold:* ${sold}\n`
 
+  if (product.recentSalesCount && product.recentSalesCount > 0) {
+    text += `\n🔥 _${lang === 'sw' ? `Watu ${product.recentSalesCount} wamenunua bidhaa hii hivi karibuni!` : `${product.recentSalesCount} people bought this recently!`}_\n`
+  } else if (sold > 10) {
+    text += `\n🌟 _${lang === 'sw' ? `Bidhaa pendwa! Imenunuliwa mara ${sold}.` : `Popular item! Sold ${sold} times.`}_\n`
+  }
+
   return text
 }
 
@@ -115,6 +121,12 @@ function formatTextProductPreview(product, lang = 'sw') {
 
   const sold = product.salesCount || 0
   text += `📈 *Sold:* ${sold}\n`
+
+  if (product.recentSalesCount && product.recentSalesCount > 0) {
+    text += `\n🔥 _${lang === 'sw' ? `Watu ${product.recentSalesCount} wamenunua bidhaa hii hivi karibuni!` : `${product.recentSalesCount} people bought this recently!`}_\n`
+  } else if (sold > 10) {
+    text += `\n🌟 _${lang === 'sw' ? `Bidhaa pendwa! Imenunuliwa mara ${sold}.` : `Popular item! Sold ${sold} times.`}_\n`
+  }
 
   return text
 }

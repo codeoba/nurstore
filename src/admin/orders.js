@@ -119,6 +119,87 @@ function registerAdminOrderHandlers(bot) {
     }
   })
 
+  // ─── Refund Requests Management ──────────────────────────────
+  bot.action(/^admin:refund:approve:(\d+)$/, isAdmin, async (ctx) => {
+    await ctx.answerCbQuery('Inaidhinisha...')
+    const requestId = parseInt(ctx.match[1])
+
+    try {
+      const request = await prisma.refundRequest.findUnique({
+        where: { id: requestId },
+        include: { order: { include: { user: true } } }
+      })
+      if (!request || request.status !== 'pending') throw new Error('Request haipo au imeshughulikiwa')
+
+      // Update refund request
+      await prisma.refundRequest.update({
+        where: { id: requestId },
+        data: { status: 'approved', resolvedAt: new Date() }
+      })
+
+      // Update order status to refunded
+      await prisma.order.update({
+        where: { id: request.orderId },
+        data: { status: 'refunded' }
+      })
+
+      // Notify User
+      try {
+        await bot.telegram.sendMessage(
+          Number(request.order.user.telegramId),
+          `✅ *Ombi la Refund Limekubaliwa*\n\nMalipo yako kwa Order \\#${request.orderId} yamerudishwa. Ikiwa ulitumia Mobile Money, admin atawasiliana nawe au ameshakutumia pesa yako.`,
+          { parse_mode: 'MarkdownV2' }
+        )
+      } catch (e) {
+        logger.error('Failed to notify user of refund', { error: e.message })
+      }
+
+      await safeEditMessage(ctx,
+        `✅ *Refund Imekubaliwa*\n\nOrder \\#${request.orderId} imewekwa kama Refunded.`,
+        Markup.inlineKeyboard([[Markup.button.callback('◀️ Maagizo', 'admin:orders')]])
+      )
+    } catch (err) {
+      await ctx.answerCbQuery(`❌ Hitilafu: ${err.message}`, { show_alert: true })
+    }
+  })
+
+  bot.action(/^admin:refund:reject:(\d+)$/, isAdmin, async (ctx) => {
+    await ctx.answerCbQuery('Inakataa...')
+    const requestId = parseInt(ctx.match[1])
+
+    try {
+      const request = await prisma.refundRequest.findUnique({
+        where: { id: requestId },
+        include: { order: { include: { user: true } } }
+      })
+      if (!request || request.status !== 'pending') throw new Error('Request haipo au imeshughulikiwa')
+
+      // Update refund request
+      await prisma.refundRequest.update({
+        where: { id: requestId },
+        data: { status: 'rejected', resolvedAt: new Date() }
+      })
+
+      // Notify User
+      try {
+        await bot.telegram.sendMessage(
+          Number(request.order.user.telegramId),
+          `❌ *Ombi la Refund Limekataliwa*\n\nSamahani, ombi lako la refund kwa Order \\#${request.orderId} limekataliwa na utawala. Wasiliana na huduma kwa wateja kwa msaada zaidi.`,
+          { parse_mode: 'MarkdownV2' }
+        )
+      } catch (e) {
+        logger.error('Failed to notify user of refund rejection', { error: e.message })
+      }
+
+      await safeEditMessage(ctx,
+        `❌ *Refund Imekataliwa*\n\nOmbi limefungwa.`,
+        Markup.inlineKeyboard([[Markup.button.callback('◀️ Maagizo', 'admin:orders')]])
+      )
+    } catch (err) {
+      await ctx.answerCbQuery(`❌ Hitilafu: ${err.message}`, { show_alert: true })
+    }
+  })
+
   // ─── Flagged Orders ──────────────────────────────────────────
   bot.action('admin:orders:flagged', isAdmin, async (ctx) => {
     await ctx.answerCbQuery()
