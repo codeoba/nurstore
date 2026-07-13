@@ -110,13 +110,18 @@ function registerCheckoutHandlers(bot) {
 
   // ─── Mobile Money Network Chosen (show instructions) ────────────────
   bot.action(/^store:buy:mm:(mpesa|airtel|mix|halopesa):(\d+)$/, async (ctx) => {
-    await ctx.answerCbQuery()
-    const network = ctx.match[1]
-    const productId = parseInt(ctx.match[2])
-    const lang = ctx.session?.language || 'sw'
-    const user = await getDbUser(ctx.from.id)
-    if (!user) return
-    await showMobileMoneyInstructions(ctx, user.id, productId, network, lang)
+    try {
+      await ctx.answerCbQuery()
+      const network = ctx.match[1]
+      const productId = parseInt(ctx.match[2])
+      const lang = ctx.session?.language || 'sw'
+      const user = await getDbUser(ctx.from.id)
+      if (!user) return
+      await showMobileMoneyInstructions(ctx, user.id, productId, network, lang)
+    } catch (err) {
+      await ctx.reply(`DEV ERROR (Action Handler): ${err.message}`).catch(() => {})
+      throw err
+    }
   })
 }
 
@@ -706,6 +711,7 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
     ])
   }).catch((err) => {
     logger.error('Error rendering MM Instructions HTML', { error: err.message })
+    ctx.reply(`DEV ERROR: ${err.message}`).catch(() => {})
     throw err
   })
 
