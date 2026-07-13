@@ -779,6 +779,47 @@ async function handleDiscountStep(ctx, wizard, text) {
   return false
 }
 
+// ─── Edit Stock Step ────────────────────────────────────────────
+
+async function handleEditStockStep(ctx, wizard, text) {
+  if (text?.toLowerCase() === 'unlimited') {
+    const { prisma } = require('../database')
+    const p = await prisma.product.update({
+      where: { id: wizard.data.productId },
+      data: { stock: null }
+    })
+    ctx.session.adminWizard = null
+    await ctx.reply('✅ Stock imebadilishwa kuwa Unlimited.', backToProductsKeyboard())
+    await showProductDetail(ctx, p.id)
+    return true
+  }
+
+  const addedStock = parseInt(text?.replace(/,/g, '').trim(), 10)
+  if (isNaN(addedStock) || addedStock <= 0) {
+    await ctx.reply('⚠️ Andika nambari sahihi ya stock utakayoongeza (zaidi ya 0), au "unlimited":')
+    return true
+  }
+
+  const { prisma } = require('../database')
+  const p = await prisma.product.findUnique({ where: { id: wizard.data.productId } })
+  const currentStock = p.stock || 0
+  const newStock = currentStock + addedStock
+
+  const updated = await prisma.product.update({
+    where: { id: wizard.data.productId },
+    data: { stock: newStock }
+  })
+  
+  // Auto-post kwenye channel
+  const { postToChannel } = require('../services/channelService')
+  await postToChannel(ctx.tg || ctx.telegram ? ctx : { telegram: require('../database').bot.telegram }, updated, false, addedStock)
+
+  ctx.session.adminWizard = null
+  await ctx.reply(`✅ Stock imesasishwa kikamilifu! Zilizopo sasa hivi ni ${newStock}.`, backToProductsKeyboard())
+  await showProductDetail(ctx, updated.id)
+  return true
+}
+
 // ─── Add Category Step ────────────────────────────────────────
 
 async function handleAddCategoryStep(ctx, wizard, text) {
