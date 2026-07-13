@@ -679,32 +679,33 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
 
   const ownerName = mm.name || 'Duka'
 
+  const escapeHTML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
   const text = lang === 'sw'
-    ? `📱 *Lipia kwa ${escapeMarkdown(networkName)}*\n\n` +
-      `Tafadhali fuata hatua zifuatazo kukamilisha ununuzi wa *${escapeMarkdown(product.name)}*:\n\n` +
-      `1️⃣ Tuma kiasi cha *TZS ${price.toLocaleString('en-US')}* kwenda namba hii:\n` +
-      `📞 Namba: \`${escapeMarkdown(number)}\`\n` +
-      `👤 Jina: *${escapeMarkdown(ownerName)}*\n\n` +
-      `2️⃣ Baada ya kutuma, piga *screenshot* \\(picha\\) au nakili *ID ya muamala*\\.\n\n` +
-      `3️⃣ Tuma picha au meseji ya muamala hapa \\(reply kwenye chat hii\\) ili tuhakiki na kukutumia bidhaa yako\\.\n\n` +
-      `⏳ _Una dakika 12 pekee kukamilisha malipo na kutuma uthibitisho kabla oda yako kufutwa\\._`
-    : `📱 *Pay via ${escapeMarkdown(networkName)}*\n\n` +
-      `Please follow these steps to complete your purchase of *${escapeMarkdown(product.name)}*:\n\n` +
-      `1️⃣ Send exactly *TZS ${price.toLocaleString('en-US')}* to this number:\n` +
-      `📞 Number: \`${escapeMarkdown(number)}\`\n` +
-      `👤 Name: *${escapeMarkdown(ownerName)}*\n\n` +
-      `2️⃣ Take a *screenshot* or copy the *transaction ID*\\.\n\n` +
-      `3️⃣ Send the screenshot or text here in this chat so we can verify and deliver your product\\.\n\n` +
-      `⏳ _You have 12 minutes to complete the payment and send proof before your order is cancelled\\._`
+    ? `📱 <b>Lipia kwa ${escapeHTML(networkName)}</b>\n\n` +
+      `Tafadhali fuata hatua zifuatazo kukamilisha ununuzi wa <b>${escapeHTML(product.name)}</b>:\n\n` +
+      `1️⃣ Tuma kiasi cha <b>TZS ${price.toLocaleString('en-US')}</b> kwenda namba hii:\n` +
+      `📞 Namba: <code>${escapeHTML(number)}</code>\n` +
+      `👤 Jina: <b>${escapeHTML(ownerName)}</b>\n\n` +
+      `2️⃣ Baada ya kutuma, piga <b>screenshot</b> (picha) au nakili <b>ID ya muamala</b>.\n\n` +
+      `3️⃣ Tuma picha au meseji ya muamala hapa (reply kwenye chat hii) ili tuhakiki na kukutumia bidhaa yako.\n\n` +
+      `⏳ <i>Una dakika 12 pekee kukamilisha malipo na kutuma uthibitisho kabla oda yako kufutwa.</i>`
+    : `📱 <b>Pay via ${escapeHTML(networkName)}</b>\n\n` +
+      `Please follow these steps to complete your purchase of <b>${escapeHTML(product.name)}</b>:\n\n` +
+      `1️⃣ Send exactly <b>TZS ${price.toLocaleString('en-US')}</b> to this number:\n` +
+      `📞 Number: <code>${escapeHTML(number)}</code>\n` +
+      `👤 Name: <b>${escapeHTML(ownerName)}</b>\n\n` +
+      `2️⃣ Take a <b>screenshot</b> or copy the <b>transaction ID</b>.\n\n` +
+      `3️⃣ Send the screenshot or text here in this chat so we can verify and deliver your product.\n\n` +
+      `⏳ <i>You have 12 minutes to complete the payment and send proof before your order is cancelled.</i>`
 
   await ctx.editMessageText(text, {
-    parse_mode: 'MarkdownV2',
+    parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)]
     ])
   }).catch((err) => {
-    logger.error('Error rendering MM Instructions Markdown', { error: err.message })
-    ctx.reply(`DEV ERROR (Markdown): ${err.message}`).catch(() => {})
+    logger.error('Error rendering MM Instructions HTML', { error: err.message })
     throw err
   })
 
