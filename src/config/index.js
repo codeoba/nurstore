@@ -46,6 +46,7 @@ const config = {
   bot: {
     token: required('BOT_TOKEN'),
     storeName: optional('STORE_NAME', 'Duka la Digital'),
+    channelId: optional('CHANNEL_ID', ''), // Channel or Group ID for auto-posting
   },
 
   // Admins

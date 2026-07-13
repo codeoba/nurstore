@@ -173,6 +173,22 @@ function registerAdminProductHandlers(bot) {
     )
   })
 
+  // Handle manual stock edit
+  bot.action(/^admin:prod:stock:edit:(\d+)$/, isAdmin, async (ctx) => {
+    await ctx.answerCbQuery()
+    const productId = parseInt(ctx.match[1])
+
+    ctx.session.adminWizard = {
+      scene: 'edit_stock',
+      step: 'amount',
+      data: { productId }
+    }
+    await ctx.editMessageText('📦 *Update Stock*\n\nAndika nambari ya stock MPYA utakayoongeza (mfano: ukiandika 20 itaongeza 20 kwenye iliyopo), au andika "unlimited" kuondoa ukomo:', {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Ghairi', `admin:prod:view:${productId}`)]])
+    })
+  })
+
   // Add Category
   bot.action('admin:categories', isAdmin, async (ctx) => {
     await ctx.answerCbQuery()
@@ -313,6 +329,11 @@ async function handleAdminProductWizard(ctx) {
   // ─── Set Discount Wizard ───────────────────────────────────
   if (wizard.scene === 'setDiscount') {
     return await handleDiscountStep(ctx, wizard, text)
+  }
+
+  // ─── Edit Stock Wizard ───────────────────────────────────
+  if (wizard.scene === 'edit_stock') {
+    return await handleEditStockStep(ctx, wizard, text)
   }
 
   // ─── Add Category Wizard ───────────────────────────────────
@@ -669,6 +690,10 @@ async function saveProduct(ctx, wizard) {
     const product = await createProduct(d)
     await auditLog(ctx.from.id, 'product.created', { productId: product.id, name: product.name })
 
+    // Auto-post kwenye channel
+    const { postToChannel } = require('../services/channelService')
+    await postToChannel(ctx.tg || ctx.telegram ? ctx : { telegram: require('../database').bot.telegram }, product, true, 0)
+
     await ctx.reply(
       `✅ *Bidhaa imeundwa kwa mafanikio\\!*\n\n` +
       `📦 *${escapeMarkdown(product.name)}*\n` +
@@ -688,7 +713,7 @@ async function handleDiscountStep(ctx, wizard, text) {
   const { step, data } = wizard
 
   if (step === 'stars') {
-    const usdRate = config.currency.usdToTzsRate || 2600
+    const usdRate = config.currency?.usdToTzsRate || 2600
     let discountTzs, discountUsd
 
     if (text.startsWith('$') || text.endsWith('$')) {
@@ -857,10 +882,13 @@ async function showProductDetail(ctx, productId) {
 
   const row2 = [
     Markup.button.callback('💸 Punguzo', `admin:prod:discount:${p.id}`),
+    Markup.button.callback('📦 Update Stock', `admin:prod:stock:edit:${p.id}`),
+  ]
+  const row3 = [
     Markup.button.callback('🗑️ Futa', `admin:prod:delete:${p.id}`),
   ]
 
-  const keyboardRows = [row1, row2]
+  const keyboardRows = [row1, row2, row3]
 
   // Kama ni pre-order na ipo active, ongeza kitufe cha kuiweka Live
   if (p.isPreOrder && p.isActive) {

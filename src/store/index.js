@@ -23,6 +23,15 @@ function registerStoreRouter(bot) {
       await processReferral(ctx.from.id, refCode)
     }
 
+    // Angalia kama anatoka kwenye channel link (mfano: prod_123)
+    if (args.startsWith('prod_')) {
+      const productId = parseInt(args.substring(5), 10)
+      if (!isNaN(productId)) {
+        const { showProductDetail } = require('./browse')
+        return showProductDetail(ctx, productId, ctx.session?.language || 'sw')
+      }
+    }
+
     await showMainMenu(ctx)
   })
 

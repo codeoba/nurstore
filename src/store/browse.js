@@ -341,11 +341,16 @@ async function showSingleProductInBrowse(ctx, product, meta) {
 async function showProductDetail(ctx, productId, lang = 'sw') {
   const product = await getProductPreview(productId)
 
+  const isCommand = !ctx.callbackQuery
+
   if (!product) {
-    await ctx.editMessageText(
-      lang === 'sw' ? '❌ Bidhaa haipatikani au imezimwa.' : '❌ Product not found or unavailable.',
-      Markup.inlineKeyboard([[Markup.button.callback('◀️', 'store:browse')]])
-    )
+    const text = lang === 'sw' ? '❌ Bidhaa haipatikani au imezimwa.' : '❌ Product not found or unavailable.'
+    const kb = Markup.inlineKeyboard([[Markup.button.callback('◀️', 'store:browse')]])
+    if (isCommand) {
+      await ctx.reply(text, kb)
+    } else {
+      await ctx.editMessageText(text, kb)
+    }
     return
   }
 
@@ -392,7 +397,20 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
     [Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:browse')],
   ])
 
-  await ctx.editMessageText(text + reviewText, { parse_mode: 'MarkdownV2', ...keyboard })
+  const opts = { parse_mode: 'MarkdownV2', ...keyboard }
+  
+  if (isCommand) {
+    if (product.thumbnailFileId) {
+      await ctx.replyWithPhoto(product.thumbnailFileId, { caption: text + reviewText, ...opts })
+    } else {
+      await ctx.reply(text + reviewText, opts)
+    }
+  } else {
+    // If it has a photo but we are editing text, we can't edit text of a photo message easily unless it's a caption, but let's just do what we did before.
+    await ctx.editMessageText(text + reviewText, opts).catch(async () => {
+      await ctx.reply(text + reviewText, opts)
+    })
+  }
 }
 
 async function showFeaturedProducts(ctx, lang = 'sw') {
