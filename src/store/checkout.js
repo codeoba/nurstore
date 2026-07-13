@@ -702,7 +702,11 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
     ...Markup.inlineKeyboard([
       [Markup.button.callback(lang === 'sw' ? '❌ Ghairi' : '❌ Cancel', `store:product:${productId}`)]
     ])
-  }).catch(() => {})
+  }).catch((err) => {
+    logger.error('Error rendering MM Instructions Markdown', { error: err.message })
+    ctx.reply(`DEV ERROR (Markdown): ${err.message}`).catch(() => {})
+    throw err
+  })
 
   // Weka Timeout ya dakika 12
   setTimeout(async () => {
