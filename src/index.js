@@ -174,6 +174,13 @@ bot.on('message', async (ctx) => {
       if (handled) return
     }
 
+    // Mobile Money Proof
+    if (userWizard.scene === 'mobilemoney_proof') {
+      const { handleMobileMoneyWizard } = require('./store/checkout')
+      const handled = await handleMobileMoneyWizard(ctx)
+      if (handled) return
+    }
+
     // Refund
     if (userWizard.scene === 'refund') {
       const { handleRefundWizard } = require('./store/orders')

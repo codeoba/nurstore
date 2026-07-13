@@ -748,7 +748,72 @@ async function getDbUser(telegramId) {
   })
 }
 
+// ─── Mobile Money Wizard Handler ──────────────────────────────
+async function handleMobileMoneyWizard(ctx) {
+  const wizard = ctx.session?.userWizard
+  if (!wizard || wizard.scene !== 'mobilemoney_proof') return false
+
+  const { orderId, network, priceTzs } = wizard.data
+  const lang = ctx.session?.language || 'sw'
+
+  let proofReference = ''
+  let adminMessageOpts = {}
+  
+  if (ctx.message?.photo) {
+    const photo = ctx.message.photo[ctx.message.photo.length - 1]
+    proofReference = `photo:${photo.file_id}`
+    adminMessageOpts = { photo: photo.file_id, caption: `📲 *Malipo Mapya ya ${network}*\n\nOrder \\#${orderId}\nKiasi: TZS ${priceTzs}\n\nUthibitisho umeambatishwa hapo juu\\.` }
+  } else if (ctx.message?.text) {
+    proofReference = `text:${ctx.message.text}`
+    const { escapeMarkdown } = require('../utils/formatting')
+    adminMessageOpts = `📲 *Malipo Mapya ya ${network}*\n\nOrder \\#${orderId}\nKiasi: TZS ${priceTzs}\n\nUthibitisho:\n\`${escapeMarkdown(ctx.message.text)}\``
+  } else {
+    await ctx.reply(lang === 'sw' ? '⚠️ Tafadhali tuma picha (screenshot) au meseji ya muamala.' : '⚠️ Please send a screenshot or transaction text.')
+    return true
+  }
+
+  try {
+    // Update order with proof reference
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { paymentReference: proofReference }
+    })
+
+    // Notify admins
+    const { notifyAdmins } = require('../services/notificationService')
+    const adminKeyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ Approve (Tuma)', `admin:order:confirm_yes:${orderId}`),
+        Markup.button.callback('❌ Reject (Ghairi)', `admin:order:cancel:${orderId}`),
+      ],
+      [Markup.button.callback('👀 View Order', `admin:order:view:${orderId}`)]
+    ])
+
+    if (adminMessageOpts.photo) {
+      await notifyAdmins(ctx.telegram, adminMessageOpts, adminKeyboard)
+    } else {
+      await notifyAdmins(ctx.telegram, adminMessageOpts, adminKeyboard)
+    }
+
+    // Clear wizard
+    ctx.session.userWizard = null
+
+    const successMsg = lang === 'sw'
+      ? `✅ *Uthibitisho umepokelewa!*\n\nTunasubiri admin ahakiki muamala wako. Bidhaa yako itatumwa hapa hapa punde tu uthibitisho utakapokamilika.\n\nAsante kwa kununua na sisi!`
+      : `✅ *Proof received!*\n\nWaiting for admin verification. Your product will be delivered right here once confirmed.\n\nThank you for shopping with us!`
+    
+    await ctx.reply(successMsg, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('◀️ Rudi Menyu', 'store:menu')]]) })
+
+  } catch (err) {
+    logger.error('Error handling mobile money proof', { error: err.message, orderId })
+    await ctx.reply(`❌ Hitilafu: ${err.message}`)
+  }
+
+  return true
+}
+
 module.exports = {
   registerCheckoutHandlers,
   handleCheckoutWizard,
+  handleMobileMoneyWizard,
 }
