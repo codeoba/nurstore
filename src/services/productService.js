@@ -257,6 +257,7 @@ async function createProduct(data) {
       lockedContent: data.lockedContent || null,
       contentFormat: data.contentFormat || 'plain',
       subscriptionDays: data.subscriptionDays || null,
+      bundledIds: data.bundledIds || [],
       isPreOrder: data.isPreOrder ?? false,
       isVipOnly: data.isVipOnly ?? false,
     },

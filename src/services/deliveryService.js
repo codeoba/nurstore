@@ -26,6 +26,39 @@ async function deliverOrder(bot, telegramUserId, order) {
 
   // Tuma confirmation kwanza
   try {
+    if (order.isGift) {
+      // Hii ni zawadi, tunatengeneza link ya zawadi
+      const crypto = require('crypto')
+      const code = crypto.randomBytes(5).toString('hex').toUpperCase()
+
+      await prisma.gift.create({
+        data: {
+          code,
+          orderId: order.id,
+          senderId: order.userId,
+        }
+      })
+
+      const botUsername = bot.botInfo?.username || 'Bot'
+      const link = `https://t.me/${botUsername}?start=gift_${code}`
+
+      const { escapeMarkdown } = require('../utils/formatting')
+      await bot.telegram.sendMessage(
+        telegramUserId,
+        `🎁 *Zawadi Iko Tayari\\!*\n\n` +
+        `Umefanikiwa kununua oda \\#${order.id} kama zawadi\\. Tuma link ifuatayo kwa unayetaka kumpa:\n\n` +
+        `👉 ${escapeMarkdown(link)}\n\n` +
+        `_Akiminya link hii, atapokea bidhaa moja kwa moja kwenye Telegram yake\\._`,
+        { parse_mode: 'MarkdownV2' }
+      )
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'delivered', deliveredAt: new Date() },
+      })
+      return // Usiendelee kutuma bidhaa
+    }
+
     await bot.telegram.sendMessage(
       telegramUserId,
       `✅ *Malipo Yamepokelewa\\!*\n\n` +
@@ -51,6 +84,24 @@ async function deliverOrder(bot, telegramUserId, order) {
         await deliverTextContent(bot, telegramUserId, product, order)
       } else if (product.productType === 'subscription') {
         await deliverSubscription(bot, telegramUserId, product, order)
+      } else if (product.productType === 'bundle') {
+        // Tuma bidhaa zote zilizomo kwenye bundle
+        const bundledProducts = await prisma.product.findMany({
+          where: { id: { in: product.bundledIds || [] } }
+        })
+        for (const bProduct of bundledProducts) {
+          try {
+            if (bProduct.productType === 'file') {
+              await deliverFile(bot, telegramUserId, bProduct, order)
+            } else if (bProduct.productType === 'text_content') {
+              await deliverTextContent(bot, telegramUserId, bProduct, order)
+            } else if (bProduct.productType === 'subscription') {
+              await deliverSubscription(bot, telegramUserId, bProduct, order)
+            }
+          } catch (e) {
+            logger.error('Failed to deliver bundled product', { bundleId: product.id, bundledProductId: bProduct.id, error: e.message })
+          }
+        }
       }
 
       // Mark item kama imetumwa

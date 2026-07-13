@@ -17,6 +17,7 @@ enum ProductType {
   file
   text_content
   subscription
+  bundle
 }
 
 enum OrderStatus {
@@ -208,6 +209,9 @@ model Product {
   // Subscription fields
   subscriptionDays   Int?          @map("subscription_days") // e.g., 30 for monthly
 
+  // Bundle fields
+  bundledIds         Int[]         @default([]) @map("bundled_ids")
+
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
@@ -235,6 +239,7 @@ model Order {
   notes            String?
   isFlagged        Boolean       @default(false) @map("is_flagged") // fraud flag
   flagReason       String?       @map("flag_reason")
+  isGift           Boolean       @default(false) @map("is_gift")
   createdAt        DateTime      @default(now()) @map("created_at")
   paidAt           DateTime?     @map("paid_at")
   deliveredAt      DateTime?     @map("delivered_at")
@@ -412,3 +417,16 @@ model RefundRequest {
 
   @@map("refund_requests")
 }
+
+model Gift {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  orderId     Int       @unique @map("order_id")
+  senderId    Int       @map("sender_id")
+  recipientId Int?      @map("recipient_id")
+  claimedAt   DateTime? @map("claimed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("gifts")
+}
+

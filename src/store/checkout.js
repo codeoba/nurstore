@@ -20,7 +20,18 @@ function registerCheckoutHandlers(bot) {
     const user = await getDbUser(ctx.from.id)
     if (!user) return
 
-    await initDirectCheckout(ctx, user.id, productId, lang)
+    await initDirectCheckout(ctx, user.id, productId, lang, false)
+  })
+
+  // ─── Buy as Gift ──────────────────────────────────────────────
+  bot.action(/^store:gift:(\d+)$/, checkoutRateLimit, async (ctx) => {
+    await ctx.answerCbQuery()
+    const productId = parseInt(ctx.match[1])
+    const lang = ctx.session?.language || 'sw'
+    const user = await getDbUser(ctx.from.id)
+    if (!user) return
+
+    await initDirectCheckout(ctx, user.id, productId, lang, true)
   })
 
   // ─── Coupon Input ─────────────────────────────────────────────
@@ -74,8 +85,9 @@ function registerCheckoutHandlers(bot) {
     const wizard = ctx.session.userWizard
     const couponId = wizard?.data?.couponId || null
     const couponDiscount = wizard?.data?.couponDiscount || 0
+    const isGift = wizard?.data?.isGift || false
 
-    await processDirectWalletCheckout(ctx, user.id, productId, couponId, couponDiscount, lang)
+    await processDirectWalletCheckout(ctx, user.id, productId, couponId, couponDiscount, lang, isGift)
     ctx.session.userWizard = null
   })
 
@@ -244,7 +256,7 @@ async function processCartWalletCheckout(ctx, userId, couponId, couponDiscount, 
 /**
  * Shughulikia ununuzi wa bidhaa moja (Buy Now) kwa Wallet
  */
-async function processDirectWalletCheckout(ctx, userId, productId, couponId, couponDiscount, lang) {
+async function processDirectWalletCheckout(ctx, userId, productId, couponId, couponDiscount, lang, isGift = false) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { isVip: true },
@@ -309,8 +321,8 @@ async function processDirectWalletCheckout(ctx, userId, productId, couponId, cou
 
   // Mtumiaji ana hela
   try {
-    // 1. Unda order (kupitisha isVip)
-    const order = await createDirectOrder(userId, productId, couponId, couponDiscount, isVip)
+    // 1. Unda order (kupitisha isVip na isGift)
+    const order = await createDirectOrder(userId, productId, couponId, couponDiscount, isVip, isGift)
 
     // 2. Lipia order kwa wallet
     const paidOrder = await payOrderWithWallet(userId, order.id)
@@ -363,7 +375,7 @@ async function processDirectWalletCheckout(ctx, userId, productId, couponId, cou
 
 // ─── Direct Buy Flow Initiator ────────────────────────────────
 
-async function initDirectCheckout(ctx, userId, productId, lang) {
+async function initDirectCheckout(ctx, userId, productId, lang, isGift = false) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { isVip: true },
@@ -409,13 +421,20 @@ async function initDirectCheckout(ctx, userId, productId, lang) {
       : `\n👑 *VIP Discount Applied \\(${vipDiscount}%\\):* ~~TZS ${originalPrice.toLocaleString('en-US')}~~ TZS *${price.toLocaleString('en-US')}*`
   }
 
-  ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId } }
+  ctx.session.userWizard = { scene: 'directBuy', step: 'confirm', data: { productId, isGift } }
 
   const wallet = await getOrCreateWallet(userId)
 
-  const text = lang === 'sw'
-    ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChagua njia ya malipo:`
-    : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChoose payment method:`
+  let text = ''
+  if (isGift) {
+    text = lang === 'sw'
+      ? `🎁 *Nunua Kama Zawadi — ${escapeMarkdown(product.name)}*\n\nUkinunua kama zawadi, utapewa "Gift Code" na Link ya kumtumia umpendaye\\. \n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChagua njia ya malipo:`
+      : `🎁 *Buy as Gift — ${escapeMarkdown(product.name)}*\n\nYou will receive a shareable Gift Link\\. \n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChoose payment method:`
+  } else {
+    text = lang === 'sw'
+      ? `⚡ *Nunua Sasa — ${escapeMarkdown(product.name)}*\n\nBei: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChagua njia ya malipo:`
+      : `⚡ *Buy Now — ${escapeMarkdown(product.name)}*\n\nPrice: *TZS ${price.toLocaleString('en-US')}*${escapeMarkdown(vipText)}\n\nChoose payment method:`
+  }
 
   await ctx.editMessageText(text, {
     parse_mode: 'MarkdownV2',
@@ -640,6 +659,9 @@ async function showMobileMoneyNetworks(ctx, productId, lang) {
 }
 
 async function showMobileMoneyInstructions(ctx, userId, productId, network, lang) {
+  const wizard = ctx.session?.userWizard
+  const isGift = wizard?.data?.isGift || false
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { isVip: true },
@@ -673,13 +695,13 @@ async function showMobileMoneyInstructions(ctx, userId, productId, network, lang
   const networkName = networkNames[network] || network
 
   // Create order
-  const order = await createDirectOrder(userId, productId, null, 0, isVip)
+  const order = await createDirectOrder(userId, productId, null, 0, isVip, isGift)
 
   ctx.session = ctx.session || {}
   ctx.session.userWizard = {
     scene: 'mobilemoney_proof',
     step: 'screenshot',
-    data: { orderId: order.id, productId, network, priceTzs: price }
+    data: { orderId: order.id, productId, network, priceTzs: price, isGift }
   }
 
   const ownerName = mm.name || 'Duka'

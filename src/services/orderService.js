@@ -149,7 +149,7 @@ async function createOrderFromCart(userId, cartItems, couponId = null, couponDis
 /**
  * Tengeneza order ya bidhaa moja bila cart (Buy Now)
  */
-async function createDirectOrder(userId, productId, couponId = null, couponDiscount = 0, isVip = false) {
+async function createDirectOrder(userId, productId, couponId = null, couponDiscount = 0, isVip = false, isGift = false) {
   const { isDiscountActive } = require('../utils/formatting')
   const vipDiscount = config.vip?.discountPercent || 15
 
@@ -193,6 +193,7 @@ async function createDirectOrder(userId, productId, couponId = null, couponDisco
       paymentMethod: 'wallet',
       couponId,
       couponDiscount: couponDiscount || null,
+      isGift,
       items: {
         create: [{
           productId: product.id,

@@ -43,7 +43,10 @@ function registerAdminProductHandlers(bot) {
             Markup.button.callback('📁 Faili', 'admin:prod:type:file'),
             Markup.button.callback('📄 Maandishi', 'admin:prod:type:text_content'),
           ],
-          [Markup.button.callback('🔄 Usajili', 'admin:prod:type:subscription')],
+          [
+            Markup.button.callback('🔄 Usajili', 'admin:prod:type:subscription'),
+            Markup.button.callback('📦 Kifurushi (Bundle)', 'admin:prod:type:bundle'),
+          ],
           [Markup.button.callback('❌ Ghairi', 'admin:products')],
         ]),
       }
@@ -51,12 +54,12 @@ function registerAdminProductHandlers(bot) {
   })
 
   // Type selection
-  bot.action(/^admin:prod:type:(file|text_content|subscription)$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:prod:type:(file|text_content|subscription|bundle)$/, isAdmin, async (ctx) => {
     await ctx.answerCbQuery()
     const type = ctx.match[1]
     ctx.session.adminWizard = { scene: WIZARD, step: 'name', data: { productType: type } }
 
-    const typeNames = { file: '📁 Faili', text_content: '📄 Maandishi', subscription: '🔄 Usajili' }
+    const typeNames = { file: '📁 Faili', text_content: '📄 Maandishi', subscription: '🔄 Usajili', bundle: '📦 Kifurushi' }
     await ctx.editMessageText(
       `📦 *Bidhaa Mpya — ${typeNames[type]}*\n\n` +
       `*Hatua 1/7:* Andika *jina* la bidhaa:`,
@@ -446,7 +449,8 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       data.priceTzs = priceTzs
       data.priceUsd = priceUsd
       wizard.step = data.productType === 'text_content' ? 'preview_desc' :
-                    data.productType === 'subscription' ? 'sub_days' : 'file_upload'
+                    data.productType === 'subscription' ? 'sub_days' : 
+                    data.productType === 'bundle' ? 'bundle_products' : 'file_upload'
 
       const displayPrice = `TZS ${priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(priceUsd.toFixed(2))}\\)`
 
@@ -461,12 +465,39 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
           `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Andika *preview/teaser description* \\(inayoonekana kwa umma kabla ya kununua\\):`,
           { parse_mode: 'MarkdownV2' }
         )
-      } else {
+      } else if (data.productType === 'subscription') {
         await ctx.reply(
           `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Usajili huu unaisha baada ya siku ngapi? \\(mfano: 30 kwa mwezi\\)`,
           { parse_mode: 'MarkdownV2' }
         )
+      } else if (data.productType === 'bundle') {
+        await ctx.reply(
+          `✅ Bei: ${displayPrice}\n\n*Hatua 5/7:* Andika ID za bidhaa zinazounda huu mgawanyo/bundle \\(Tenganisha kwa koma, mfano: 12, 15, 19\\):`,
+          { parse_mode: 'MarkdownV2' }
+        )
       }
+      return true
+    }
+
+    case 'bundle_products': {
+      if (!text || text.length < 1) {
+        await ctx.reply('⚠️ Tafadhali andika ID za bidhaa (mfano: 12, 15):')
+        return true
+      }
+      const ids = text.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+      if (ids.length === 0) {
+        await ctx.reply('⚠️ Hakuna ID sahihi zilizopatikana. Jaribu tena (mfano: 12, 15):')
+        return true
+      }
+      
+      data.bundledIds = ids
+      wizard.step = 'features'
+      await ctx.reply(
+        `✅ Bidhaa ${ids.length} zimeunganishwa kwenye bundle\\.\n\n*Hatua 6a:* Andika *features/mambo utakayopata* \\(mstari mmoja kwa feature\\):\n` +
+        '_Mfano:\n✅ Starter Pack Bundle\n✅ 3 in 1 Package_\n\n' +
+        'Au andika "skip" kuruka hatua hii:',
+        { parse_mode: 'MarkdownV2' }
+      )
       return true
     }
 

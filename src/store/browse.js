@@ -387,6 +387,9 @@ async function showProductDetail(ctx, productId, lang = 'sw') {
       Markup.button.callback(priceLabel, `store:buy:${productId}`)
     ],
     [
+      Markup.button.callback(lang === 'sw' ? '🎁 Nunua kama Zawadi' : '🎁 Buy as Gift', `store:gift:${productId}`),
+    ],
+    [
       Markup.button.callback(lang === 'sw' ? '🛒 Ongeza Kikapuni' : '🛒 Add to Cart', `store:cart:add:${productId}`),
       Markup.button.callback(buyLabel, `store:buy:${productId}`),
     ],

@@ -23,6 +23,13 @@ function registerStoreRouter(bot) {
       await processReferral(ctx.from.id, refCode)
     }
 
+    // Angalia kama ni claim ya gift (mfano: gift_ABC12)
+    if (args.startsWith('gift_')) {
+      const code = args.substring(5)
+      const { processGiftClaim } = require('../services/giftService')
+      return await processGiftClaim(ctx, code)
+    }
+
     // Angalia kama anatoka kwenye channel link (mfano: prod_123)
     if (args.startsWith('prod_')) {
       const productId = parseInt(args.substring(5), 10)

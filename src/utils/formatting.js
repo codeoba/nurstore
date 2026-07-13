@@ -63,6 +63,10 @@ function formatProductCard(product, lang = 'sw') {
 
   text += `🛡 *Warranty:* ${escapeMarkdown(lang === 'sw' ? 'Uhakika 100%' : '100% Guaranteed')}\n`
   text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
+
+  if (activeDiscount && product.discountEndsAt) {
+    text += `⏳ *${lang === 'sw' ? 'Mwisho wa Punguzo:' : 'Discount Ends In:'}* ${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}\n`
+  }
   
   if (product.stock !== null) {
     text += `📦 *Stock:* ${product.stock}\n`
@@ -104,6 +108,11 @@ function formatTextProductPreview(product, lang = 'sw') {
   text += `🔒 _${escapeMarkdown(lang === 'sw' ? 'Maudhui kamili yanafunguliwa baada ya malipo' : 'Full content unlocked after payment')}_\n\n`
 
   text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
+
+  if (activeDiscount && product.discountEndsAt) {
+    text += `⏳ *${lang === 'sw' ? 'Mwisho wa Punguzo:' : 'Discount Ends In:'}* ${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}\n`
+  }
+
   const sold = product.salesCount || 0
   text += `📈 *Sold:* ${sold}\n`
 
@@ -188,6 +197,28 @@ function formatDate(date, lang = 'sw') {
   )
 }
 
+/**
+ * Piga hesabu ya muda uliobaki hadi kufika tarehe fulani (kwa ajili ya Flash Sales)
+ */
+function formatTimeRemaining(endDate, lang = 'sw') {
+  const now = new Date()
+  const end = new Date(endDate)
+  const diff = end - now
+
+  if (diff <= 0) return lang === 'sw' ? 'Muda umeisha' : 'Expired'
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+  const parts = []
+  if (days > 0) parts.push(lang === 'sw' ? `${days} Siku` : `${days} Days`)
+  if (hours > 0) parts.push(lang === 'sw' ? `${hours} Masaa` : `${hours} Hrs`)
+  if (mins > 0 && days === 0) parts.push(lang === 'sw' ? `${mins} Dakika` : `${mins} Mins`)
+
+  return parts.join(' na ') || (lang === 'sw' ? 'Chini ya dakika 1' : 'Less than 1 min')
+}
+
 // ─── Utility Helpers ─────────────────────────────────────────
 
 /**
@@ -223,6 +254,7 @@ module.exports = {
   formatOrderSummary,
   formatCartSummary,
   formatDate,
+  formatTimeRemaining,
   isDiscountActive,
   escapeMarkdown,
 }
