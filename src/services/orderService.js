@@ -4,6 +4,7 @@ const { prisma } = require('../database')
 const { debitWallet } = require('./walletService')
 const { awardReferralCommission } = require('./referralService')
 const logger = require('../utils/logger')
+const config = require('../config')
 
 // ─── Cart Management ─────────────────────────────────────────
 
