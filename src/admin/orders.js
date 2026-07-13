@@ -61,7 +61,7 @@ function registerAdminOrderHandlers(bot) {
       await auditLog(ctx.from.id, 'order.manual_confirm', { orderId })
 
       // Tuma bidhaa
-      await deliverOrder(bot.telegram, Number(order.user.telegramId), order)
+      await deliverOrder(bot, Number(order.user.telegramId), order)
 
       await ctx.editMessageText(
         `✅ *Order \\#${orderId} imethibitishwa na bidhaa imetumwa\\!*`,
@@ -95,7 +95,7 @@ function registerAdminOrderHandlers(bot) {
       const order = await getOrderById(orderId)
       if (!order) throw new Error('Order haipatikani')
 
-      await deliverOrder(bot.telegram, Number(order.user.telegramId), order)
+      await deliverOrder(bot, Number(order.user.telegramId), order)
       await auditLog(ctx.from.id, 'order.resent', { orderId })
       await ctx.answerCbQuery('✅ Bidhaa imetumwa tena!', { show_alert: true })
     } catch (err) {

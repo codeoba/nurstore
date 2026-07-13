@@ -799,10 +799,10 @@ async function handleMobileMoneyWizard(ctx) {
     ctx.session.userWizard = null
 
     const successMsg = lang === 'sw'
-      ? `✅ *Uthibitisho umepokelewa!*\n\nTunasubiri admin ahakiki muamala wako. Bidhaa yako itatumwa hapa hapa punde tu uthibitisho utakapokamilika.\n\nAsante kwa kununua na sisi!`
-      : `✅ *Proof received!*\n\nWaiting for admin verification. Your product will be delivered right here once confirmed.\n\nThank you for shopping with us!`
+      ? `✅ <b>Uthibitisho umepokelewa!</b>\n\nTunasubiri admin ahakiki muamala wako. Bidhaa yako itatumwa hapa hapa punde tu uthibitisho utakapokamilika.\n\nAsante kwa kununua na sisi!`
+      : `✅ <b>Proof received!</b>\n\nWaiting for admin verification. Your product will be delivered right here once confirmed.\n\nThank you for shopping with us!`
     
-    await ctx.reply(successMsg, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('◀️ Rudi Menyu', 'store:menu')]]) })
+    await ctx.reply(successMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('◀️ Rudi Menyu', 'store:menu')]]) })
 
   } catch (err) {
     logger.error('Error handling mobile money proof', { error: err.message, orderId })
