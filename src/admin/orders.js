@@ -8,6 +8,22 @@ const { deliverOrder } = require('../services/deliveryService')
 const { prisma } = require('../database')
 const logger = require('../utils/logger')
 
+async function safeEditMessage(ctx, text, extra) {
+  const msg = ctx.callbackQuery?.message
+  if (!msg) return ctx.reply(text, extra)
+  
+  try {
+    if (msg.photo || msg.video || msg.document) {
+      await ctx.editMessageCaption(text, extra)
+    } else {
+      await ctx.editMessageText(text, extra)
+    }
+  } catch (err) {
+    if (err.message.includes('message is not modified')) return
+    throw err
+  }
+}
+
 function registerAdminOrderHandlers(bot) {
   // ─── Orders List ────────────────────────────────────────────
   bot.action(/^admin:orders(:page:(\d+))?(:filter:(\w+))?$/, isAdmin, async (ctx) => {
@@ -37,7 +53,7 @@ function registerAdminOrderHandlers(bot) {
     await ctx.answerCbQuery()
     const orderId = parseInt(ctx.match[1])
 
-    await ctx.editMessageText(
+    await safeEditMessage(ctx,
       `⚠️ *Thibitisha Malipo ya Order \\#${orderId}?*\n\n` +
       `Unafanya thibitisho la mkono\\. Bidhaa itatumwa mara moja\\.`,
       {
@@ -63,7 +79,7 @@ function registerAdminOrderHandlers(bot) {
       // Tuma bidhaa
       await deliverOrder(bot, Number(order.user.telegramId), order)
 
-      await ctx.editMessageText(
+      await safeEditMessage(ctx,
         `✅ *Order \\#${orderId} imethibitishwa na bidhaa imetumwa\\!*`,
         {
           parse_mode: 'MarkdownV2',
@@ -114,7 +130,7 @@ function registerAdminOrderHandlers(bot) {
     })
 
     if (orders.length === 0) {
-      await ctx.editMessageText(
+      await safeEditMessage(ctx,
         '✅ Hakuna maagizo yaliyobeba bendera ya ulaghai.',
         Markup.inlineKeyboard([[Markup.button.callback('◀️ Rudi', 'admin:orders')]])
       )
@@ -128,7 +144,7 @@ function registerAdminOrderHandlers(bot) {
       text += `  💬 ${escapeMarkdown(o.flagReason || 'Sababu haijabainishwa')}\n\n`
     }
 
-    await ctx.editMessageText(text, {
+    await safeEditMessage(ctx, text, {
       parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([[Markup.button.callback('◀️ Rudi', 'admin:orders')]]),
     })
@@ -146,7 +162,7 @@ async function showOrdersList(ctx, page = 1, filterStatus = '') {
       ? `📋 Hakuna maagizo ya hali ya *${escapeMarkdown(filterStatus)}*\\.`
       : '📋 Hakuna maagizo bado\\.'
 
-    await ctx.editMessageText(msg, {
+    await safeEditMessage(ctx, msg, {
       parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔄 Yote', 'admin:orders')],
@@ -183,13 +199,13 @@ async function showOrdersList(ctx, page = 1, filterStatus = '') {
   ])
   orderButtons.push([Markup.button.callback('◀️ Rudi', 'admin:menu')])
 
-  await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(orderButtons) })
+  await safeEditMessage(ctx, text, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(orderButtons) })
 }
 
 async function showOrderDetail(ctx, orderId) {
   const order = await getOrderById(orderId)
   if (!order) {
-    await ctx.editMessageText('❌ Order haipatikani.')
+    await safeEditMessage(ctx, '❌ Order haipatikani.')
     return
   }
 
@@ -234,7 +250,7 @@ async function showOrderDetail(ctx, orderId) {
 
   buttons.push([Markup.button.callback('◀️ Maagizo', 'admin:orders')])
 
-  await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) })
+  await safeEditMessage(ctx, text, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) })
 }
 
 module.exports = { registerAdminOrderHandlers }
