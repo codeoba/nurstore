@@ -86,16 +86,6 @@ async function deliverOrder(bot, telegramUserId, order) {
     })
   }
 
-  // Tuma muhtasari wa mwisho
-  await bot.telegram.sendMessage(
-    telegramUserId,
-    `📦 *Utoaji Umekamilika\\!*\n\n` +
-    `Bidhaa ${deliveredCount}/${order.items.length} zimetumwa kwa mafanikio\\.\n\n` +
-    `Angalia manunuzi yako yote: /myorders\n` +
-    `Tatizo lolote? /support`,
-    { parse_mode: 'MarkdownV2' }
-  ).catch(() => {})
-
   logger.info('Delivery completed', { orderId: order.id, deliveredCount })
 }
 
@@ -108,35 +98,42 @@ async function deliverFile(bot, telegramUserId, product, order) {
   // Angalia kama filePath ni URL ya nje (Link)
   const isUrl = product.filePath && (product.filePath.startsWith('http://') || product.filePath.startsWith('https://'))
 
+  const { formatDate } = require('../utils/formatting')
+  const dateStr = formatDate(order.createdAt)
+  const escapeHTML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  
+  const receiptHeader = 
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `🆔 <b>ORDER ID:</b> #${order.id}\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `✅ <b>Status:</b> DELIVERED\n` +
+    `🛒 <b>Product:</b> ${escapeHTML(product.name)}\n` +
+    `💵 <b>Total:</b> TZS ${order.totalTzs.toLocaleString('en-US')}\n` +
+    `💳 <b>Payment:</b> ${escapeHTML(order.paymentMethod)}\n` +
+    `📅 <b>Date:</b> ${escapeHTML(dateStr)}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `🎁 <b>Your Product:</b>\n\n`
+
   if (isUrl) {
-    const text = `📁 *${escapeMarkdown(product.name)}*\n\n` +
-      `Bofya kiungo kifuatacho kupata au kupakua bidhaa yako:\n` +
-      `🔗 [Pakua Hapa](${escapeMarkdown(product.filePath)})\n\n` +
-      `_Order \\#${order.id}_`
+    const text = receiptHeader + `<a href="${product.filePath}">🔗 Bofya Hapa Kupakua (Click to Download)</a>`
 
     const msg = await bot.telegram.sendMessage(telegramUserId, text, {
-      parse_mode: 'MarkdownV2',
-      disable_web_page_preview: false,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
     })
 
-    logger.info('File link delivered successfully', {
-      productId: product.id,
-      orderId: order.id,
-    })
+    logger.info('File link delivered successfully', { productId: product.id, orderId: order.id })
     return msg
   }
 
-  // Kama faili tayari lina Telegram file_id, tumia hiyo (ni haraka zaidi)
+  // Kama faili tayari lina Telegram file_id, tumia hiyo
   if (product.fileTelegramId) {
     const msg = await bot.telegram.sendDocument(telegramUserId, product.fileTelegramId, {
-      caption: `📁 *${escapeMarkdown(product.name)}*\n\n_Order \\#${order.id}_`,
-      parse_mode: 'MarkdownV2',
+      caption: receiptHeader + `<i>Faili lako limeambatishwa hapa chini.</i>`,
+      parse_mode: 'HTML',
     })
 
-    logger.info('File delivered via file_id', {
-      productId: product.id,
-      orderId: order.id,
-    })
+    logger.info('File delivered via file_id', { productId: product.id, orderId: order.id })
     return msg
   }
 
@@ -157,8 +154,8 @@ async function deliverFile(bot, telegramUserId, product, order) {
       telegramUserId,
       { source: fileStream, filename },
       {
-        caption: `📁 *${escapeMarkdown(product.name)}*\n\n_Order \\#${order.id}_`,
-        parse_mode: 'MarkdownV2',
+        caption: receiptHeader + `<i>Faili lako limeambatishwa hapa chini.</i>`,
+        parse_mode: 'HTML',
       }
     )
 
@@ -194,45 +191,45 @@ async function deliverTextContent(bot, telegramUserId, product, order) {
     parseInt(String(telegramUserId))
   )
 
-  // Header ya content
-  await bot.telegram.sendMessage(
-    telegramUserId,
-    `🔓 *${escapeMarkdown(product.name)}* \\— Imefunguliwa\\!\n` +
-    `━━━━━━━━━━━━━━━━━━━━`,
-    { parse_mode: 'MarkdownV2' }
-  )
+  const { formatDate } = require('../utils/formatting')
+  const dateStr = formatDate(order.createdAt)
+  const escapeHTML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  const receiptHeader = 
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `🆔 <b>ORDER ID:</b> #${order.id}\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `✅ <b>Status:</b> DELIVERED\n` +
+    `🛒 <b>Product:</b> ${escapeHTML(product.name)}\n` +
+    `💵 <b>Total:</b> TZS ${order.totalTzs.toLocaleString('en-US')}\n` +
+    `💳 <b>Payment:</b> ${escapeHTML(order.paymentMethod)}\n` +
+    `📅 <b>Date:</b> ${escapeHTML(dateStr)}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `🎁 <b>Your Product:</b>\n\n`
+
+  let fullMessage = receiptHeader
+  if (product.contentFormat === 'html' || product.contentFormat === 'markdown') {
+    // If it's code/credentials, we wrap it in <code> to match the user's request
+    fullMessage += `<code>${escapeHTML(watermarkedContent)}</code>`
+  } else {
+    fullMessage += `<code>${escapeHTML(watermarkedContent)}</code>`
+  }
 
   // Gawanya content kwa chunks kama ni ndefu sana
-  const chunks = splitIntoChunks(watermarkedContent, CHUNK_SIZE)
+  // HTML tags make splitting harder, but for credentials it usually fits in 1 chunk.
+  const chunks = splitIntoChunks(fullMessage, CHUNK_SIZE)
 
   for (let i = 0; i < chunks.length; i++) {
     const isLast = i === chunks.length - 1
-
     try {
-      if (product.contentFormat === 'markdown') {
-        await bot.telegram.sendMessage(telegramUserId, chunks[i], {
-          parse_mode: 'MarkdownV2',
-        })
-      } else {
-        await bot.telegram.sendMessage(telegramUserId, chunks[i])
-      }
-
-      // Pumzika kidogo kati ya messages ili kuzuia rate limiting
+      await bot.telegram.sendMessage(telegramUserId, chunks[i], {
+        parse_mode: 'HTML',
+      })
       if (!isLast) await sleep(500)
     } catch (err) {
-      // Kama markdown formatting imeshindwa, tuma kama plain text
       await bot.telegram.sendMessage(telegramUserId, chunks[i]).catch(() => {})
     }
   }
-
-  // Footer
-  await bot.telegram.sendMessage(
-    telegramUserId,
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `✅ Maudhui kamili yametumwa\\!\n` +
-    `_Angalia tena baadaye: /myorders_`,
-    { parse_mode: 'MarkdownV2' }
-  )
 
   logger.info('Text content delivered', {
     productId: product.id,
