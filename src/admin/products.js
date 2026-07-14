@@ -637,10 +637,10 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
       data.isPreOrder = (input === 'ndiyo' || input === 'yes' || input === '1')
       wizard.step = 'publish_schedule'
       await ctx.reply(
-        `📅 *Muda wa Ku-publish:*\n\n` +
-        `Je, ungependa kupanga muda (Schedule) bidhaa hii ianze kuonekana hewani?\n\n` +
-        `• Andika *sasa* (ku-publish papo hapo)\n` +
-        `• Au andika tarehe na muda. Mfano: *2024-12-01 14:30*`,
+        `📅 *Muda wa Ku\\-publish:*\n\n` +
+        `Je, ungependa kupanga muda \\(Schedule\\) bidhaa hii ianze kuonekana hewani?\n\n` +
+        `• Andika *sasa* \\(ku\\-publish papo hapo\\)\n` +
+        `• Au andika tarehe na muda\\. Mfano: *2024\\-12\\-01 14:30*`,
         { parse_mode: 'MarkdownV2' }
       )
       return true
