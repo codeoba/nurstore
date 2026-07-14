@@ -33,7 +33,7 @@ function formatProductCard(product, lang = 'sw') {
   text += `━━━━━━━━━━━━━━━━━━━━\n`
   
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : 'What\\'s Included'}*\n`
+    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : "What's Included"}*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
@@ -100,7 +100,7 @@ function formatTextProductPreview(product, lang = 'sw') {
   text += `━━━━━━━━━━━━━━━━━━━━\n`
   
   if (product.features && Array.isArray(product.features) && product.features.length > 0) {
-    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : 'What\\'s Included'}*\n`
+    text += `✨ *${lang === 'sw' ? 'Utakachopata (Included)' : "What's Included"}*\n`
     for (const feat of product.features) {
       let formattedFeat = String(feat).trim()
       if (!formattedFeat.startsWith('✅') && !formattedFeat.startsWith('✔️') && !formattedFeat.startsWith('✔')) {
