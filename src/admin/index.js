@@ -89,9 +89,10 @@ function registerAdminRouter(bot) {
   bot.action('admin:menu', isAdmin, (ctx) => showAdminMenu(ctx))
 
   // ─── Products ─────────────────────────────────────────────
-  const { registerAdminProductHandlers, registerWizardCategoryCallback } = require('./products')
+  const { registerAdminProductHandlers, registerWizardCategoryCallback, registerAdminProductBroadcastHandlers } = require('./products')
   registerAdminProductHandlers(bot)
   registerWizardCategoryCallback(bot)
+  if (registerAdminProductBroadcastHandlers) registerAdminProductBroadcastHandlers(bot)
 
   // ─── Orders ──────────────────────────────────────────────
   const { registerAdminOrderHandlers } = require('./orders')

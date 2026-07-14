@@ -58,6 +58,31 @@ function registerStoreRouter(bot) {
     await showProfile(ctx)
   })
 
+  // ─── Notifications Toggle ───────────────────────────────────
+  bot.action('store:notify:toggle', async (ctx) => {
+    await ctx.answerCbQuery()
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) }
+    })
+    if (!user) return
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { wantsNotifications: !user.wantsNotifications }
+    })
+    await showProfile(ctx)
+  })
+
+  // ─── Daily Free Drop ────────────────────────────────────────
+  bot.command('freedrop', async (ctx) => {
+    await handleFreeDrop(ctx)
+  })
+
+  bot.action('store:freedrop', async (ctx) => {
+    await ctx.answerCbQuery()
+    await handleFreeDrop(ctx)
+  })
+
   // ─── About / Trust Score ────────────────────────────────────
   bot.command('about', async (ctx) => {
     await showAbout(ctx)
@@ -159,6 +184,7 @@ async function showMainMenu(ctx) {
           Markup.button.callback('ℹ️ Kuhusu Sisi', 'store:about'),
         ],
         [
+          Markup.button.callback('🎁 Zawadi ya Leo', 'store:freedrop'),
           Markup.button.callback('🌐 Lugha (Language)', 'store:language'),
         ],
       ])
@@ -180,6 +206,7 @@ async function showMainMenu(ctx) {
           Markup.button.callback('ℹ️ About Us', 'store:about'),
         ],
         [
+          Markup.button.callback('🎁 Daily Drop', 'store:freedrop'),
           Markup.button.callback('🌐 Language', 'store:language'),
         ],
       ])
@@ -272,14 +299,91 @@ async function showProfile(ctx) {
     ? (lang === 'sw' ? '👑 Ongeza Muda wa VIP' : '👑 Extend VIP')
     : (lang === 'sw' ? '👑 Jiunge na VIP' : '👑 Join VIP')
 
+  const notifyBtnLabel = updatedUser.wantsNotifications
+    ? (lang === 'sw' ? '🔕 Zima Notifications' : '🔕 Turn Off Notifications')
+    : (lang === 'sw' ? '🔔 Washa Notifications' : '🔔 Turn On Notifications')
+
   const keyboard = Markup.inlineKeyboard([
     [
       Markup.button.callback(lang === 'sw' ? '💳 Wallet Yangu' : '💳 My Wallet', 'store:wallet'),
       Markup.button.callback(vipBtnLabel, 'store:vip:join_init'),
     ],
     [
+      Markup.button.callback(notifyBtnLabel, 'store:notify:toggle'),
+    ],
+    [
       Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back to Menu', 'store:menu')
     ],
+  ])
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  } else {
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  }
+}
+
+// ─── Daily Free Drop Logic ────────────────────────────────────
+
+async function handleFreeDrop(ctx) {
+  const lang = ctx.session?.language || 'sw'
+  const user = await prisma.user.findUnique({
+    where: { telegramId: BigInt(ctx.from.id) }
+  })
+
+  if (!user) {
+    return ctx.reply(lang === 'sw' ? 'Tafadhali anza kwa /start' : 'Please start with /start')
+  }
+
+  const now = new Date()
+  
+  if (user.lastFreeDropAt) {
+    const diffHours = (now - user.lastFreeDropAt) / (1000 * 60 * 60)
+    if (diffHours < 24) {
+      const remaining = Math.ceil(24 - diffHours)
+      const text = lang === 'sw'
+        ? `⏳ Umeshachukua zawadi yako ya leo\\! Rudi tena baada ya masaa ${remaining} kupata nyingine\\.`
+        : `⏳ You already claimed today's free drop\\! Come back in ${remaining} hours for the next one\\.`
+        
+      if (ctx.callbackQuery) {
+        return ctx.editMessageText(text, {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:menu')]])
+        })
+      }
+      return ctx.reply(text, { parse_mode: 'MarkdownV2' })
+    }
+  }
+
+  // Toa zawadi (Hapa tunatumia random tips, unaweza kubadilisha hapo baadaye kwa kuwa na table maalum)
+  const tipsSw = [
+    '💡 *Tip ya Leo:* Kila siku unapojifunza kitu kipya, unajiweka kwenye nafasi nzuri ya kufanikiwa.',
+    '💡 *Tip ya Leo:* Kutunza kumbukumbu ya mauzo ni siri kubwa ya ukuaji wa biashara yoyote.',
+    '💡 *Tip ya Leo:* Wateja wanapenda mawasiliano mazuri kuliko hata punguzo la bei.',
+    '💡 *Tip ya Leo:* Wekeza kwenye elimu yako, ndio uwekezaji usioshuka thamani.'
+  ]
+  const tipsEn = [
+    '💡 *Today\'s Tip:* Every day you learn something new, you position yourself for success.',
+    '💡 *Today\'s Tip:* Keeping track of sales is the big secret to any business growth.',
+    '💡 *Today\'s Tip:* Customers love good communication even more than price discounts.',
+    '💡 *Today\'s Tip:* Invest in your education, it\'s the only investment that never depreciates.'
+  ]
+
+  const randomIndex = Math.floor(Math.random() * tipsSw.length)
+  const tip = lang === 'sw' ? tipsSw[randomIndex] : tipsEn[randomIndex]
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastFreeDropAt: now }
+  })
+
+  const text = lang === 'sw'
+    ? `🎁 *Zawadi Yako ya Leo Imefika!*\n\n${escapeMarkdown(tip)}\n\n_Usikose zawadi nyingine kesho muda kama huu!_`
+    : `🎁 *Your Daily Drop is Here!*\n\n${escapeMarkdown(tip)}\n\n_Don't miss another drop tomorrow at this time!_`
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'sw' ? '🛍️ Angalia Bidhaa Zetu' : '🛍️ Browse Products', 'store:browse')],
+    [Markup.button.callback(lang === 'sw' ? '◀️ Rudi' : '◀️ Back', 'store:menu')]
   ])
 
   if (ctx.callbackQuery) {

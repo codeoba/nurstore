@@ -405,6 +405,105 @@ async function getRecommendations(productId, limit = 3) {
   })
 }
 
+/**
+ * Pata mapendekezo ya bidhaa maalum kwa mteja (For You)
+ * Inategemea na categories za bidhaa alizonunua hapo awali
+ */
+async function getRecommendations(userId, page = 1, limit = 5) {
+  const skip = (page - 1) * limit
+
+  // 1. Tafuta categories alizonunua hivi karibuni
+  const pastOrders = await prisma.order.findMany({
+    where: { userId, status: { in: ['paid', 'delivered'] } },
+    select: {
+      orderItems: {
+        select: { product: { select: { categoryId: true, id: true } } }
+      }
+    },
+    take: 10,
+    orderBy: { createdAt: 'desc' }
+  })
+
+  // Kusanya category IDs
+  const categoryIds = new Set()
+  const purchasedProductIds = new Set()
+  
+  pastOrders.forEach(order => {
+    order.orderItems.forEach(item => {
+      if (item.product?.categoryId) categoryIds.add(item.product.categoryId)
+      if (item.product?.id) purchasedProductIds.add(item.product.id)
+    })
+  })
+
+  // Kama hajanunua chochote, pendekeza best sellers au featured
+  let whereClause = {
+    isActive: true,
+    id: { notIn: Array.from(purchasedProductIds) }
+  }
+
+  if (categoryIds.size > 0) {
+    whereClause.categoryId = { in: Array.from(categoryIds) }
+  }
+
+  const [products, total] = await Promise.all([
+    prisma.product.findMany({
+      where: whereClause,
+      skip,
+      take: limit,
+      orderBy: [
+        { salesCount: 'desc' },
+        { isFeatured: 'desc' }
+      ],
+      select: {
+        id: true, name: true, nameEn: true, description: true, descriptionEn: true,
+        priceTzs: true, priceUsd: true, productType: true, thumbnailPath: true, thumbnailFileId: true,
+        stock: true, isFeatured: true, previewDescription: true, features: true,
+        discountTzs: true, discountUsd: true, discountStartsAt: true, discountEndsAt: true,
+        salesCount: true, isPreOrder: true, isVipOnly: true,
+        category: { select: { id: true, name: true } },
+        _count: { select: { reviews: true } },
+      }
+    }),
+    prisma.product.count({ where: whereClause })
+  ])
+
+  // Kama hakuna kwenye categories zake, pata fallback ya kawaida
+  if (products.length === 0 && categoryIds.size > 0) {
+    const fallbackWhere = { isActive: true, id: { notIn: Array.from(purchasedProductIds) } }
+    const [fallbackProducts, fallbackTotal] = await Promise.all([
+      prisma.product.findMany({
+        where: fallbackWhere,
+        skip, take: limit,
+        orderBy: [{ salesCount: 'desc' }, { isFeatured: 'desc' }],
+        select: {
+          id: true, name: true, nameEn: true, description: true, descriptionEn: true,
+          priceTzs: true, priceUsd: true, productType: true, thumbnailPath: true, thumbnailFileId: true,
+          stock: true, isFeatured: true, previewDescription: true, features: true,
+          discountTzs: true, discountUsd: true, discountStartsAt: true, discountEndsAt: true,
+          salesCount: true, isPreOrder: true, isVipOnly: true,
+          category: { select: { id: true, name: true } },
+          _count: { select: { reviews: true } },
+        }
+      }),
+      prisma.product.count({ where: fallbackWhere })
+    ])
+    
+    return {
+      products: fallbackProducts, total: fallbackTotal, page,
+      totalPages: Math.ceil(fallbackTotal / limit),
+      hasNext: skip + limit < fallbackTotal,
+      hasPrev: page > 1,
+    }
+  }
+
+  return {
+    products, total, page,
+    totalPages: Math.ceil(total / limit),
+    hasNext: skip + limit < total,
+    hasPrev: page > 1,
+  }
+}
+
 module.exports = {
   getProductsPage,
   getProductPreview,
@@ -418,6 +517,7 @@ module.exports = {
   getCategoryWithChildren,
   createCategory,
   getBestSellers,
+  getProductRecommendations,
   getRecommendations,
   PRODUCTS_PER_PAGE,
 }

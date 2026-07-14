@@ -372,6 +372,15 @@ async function payOrderWithWallet(userId, orderId) {
       totalTzs: order.totalTzs,
     })
 
+    if (newStatus === 'paid') {
+      try {
+        const { checkWeeklyChallenge } = module.exports
+        if (checkWeeklyChallenge) await checkWeeklyChallenge(userId)
+      } catch (e) {
+        logger.error('Failed to check weekly challenge', { error: e.message })
+      }
+    }
+
     return updatedOrder
   })
 }
@@ -428,6 +437,14 @@ async function adminManualConfirm(orderId, adminNote = '') {
   })
 
   logger.audit('admin', 'order.manual_confirm', { orderId, note: adminNote })
+  
+  try {
+    const { checkWeeklyChallenge } = module.exports
+    if (checkWeeklyChallenge) await checkWeeklyChallenge(order.userId)
+  } catch (e) {
+    logger.error('Failed to check weekly challenge', { error: e.message })
+  }
+
   return order
 }
 
@@ -560,6 +577,93 @@ async function checkFraud(order, paymentAmount) {
   return { isFraud: false, reasons: [] }
 }
 
+// ─── Streaks / Challenges ──────────────────────────────────────
+
+async function checkWeeklyChallenge(userId) {
+  // Pata mwaka na wiki (ISO week)
+  const now = new Date()
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7))
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
+  const challengeId = `weekly_3_purchases_${d.getUTCFullYear()}_w${weekNo}`
+
+  // Angalia kama ameshafanya hii challenge
+  const existing = await prisma.userChallenge.findUnique({
+    where: { userId_challengeId: { userId, challengeId } }
+  })
+  if (existing) return false
+
+  // Tafuta purchases ndani ya wiki hii
+  const startOfWeek = new Date(d)
+  startOfWeek.setUTCDate(d.getUTCDate() - 3) // Monday
+  startOfWeek.setUTCHours(0, 0, 0, 0)
+  
+  const endOfWeek = new Date(startOfWeek)
+  endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6) // Sunday
+  endOfWeek.setUTCHours(23, 59, 59, 999)
+
+  const weeklyOrdersCount = await prisma.order.count({
+    where: {
+      userId,
+      status: { in: ['paid', 'delivered'] },
+      paidAt: { gte: startOfWeek, lte: endOfWeek }
+    }
+  })
+
+  // Challenge: Buy 3 items in a week -> Reward: 5,000 TZS
+  if (weeklyOrdersCount >= 3) {
+    const rewardTzs = 5000
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userChallenge.create({
+        data: { userId, challengeId, reward: rewardTzs }
+      })
+
+      const wallet = await tx.wallet.findUnique({ where: { userId } })
+      if (wallet) {
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: rewardTzs } }
+        })
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            amount: rewardTzs,
+            type: 'deposit',
+            status: 'completed',
+            referenceId: challengeId,
+            completedAt: new Date()
+          }
+        })
+      }
+    })
+
+    // Send notification
+    try {
+      const user = await prisma.user.findUnique({ where: { id: userId } })
+      if (user && user.wantsNotifications) {
+        const { bot } = require('../database')
+        const msgSw = `🎉 *Hongera!* Umetimiza lengo la kununua bidhaa 3 ndani ya wiki hii!\n\nUmepata zawadi ya *TZS ${rewardTzs.toLocaleString('en-US')}* kwenye Wallet yako. Endelea kununua ili kufurahia ofa zaidi.`
+        const msgEn = `🎉 *Congratulations!* You completed the weekly challenge (Buy 3 items)!\n\nYou've been rewarded *TZS ${rewardTzs.toLocaleString('en-US')}* to your Wallet. Keep shopping for more bonuses.`
+        
+        await bot.telegram.sendMessage(
+          Number(user.telegramId), 
+          user.language === 'sw' ? msgSw : msgEn,
+          { parse_mode: 'MarkdownV2' }
+        )
+      }
+    } catch (e) {
+      logger.error('Failed to send challenge notification', { error: e.message })
+    }
+
+    return true
+  }
+
+  return false
+}
+
 module.exports = {
   getUserCart,
   calculateCartTotal,
@@ -574,6 +678,7 @@ module.exports = {
   adminGetOrders,
   checkFraud,
   releasePreOrderOrders,
+  checkWeeklyChallenge,
 }
 
 /**

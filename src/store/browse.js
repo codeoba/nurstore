@@ -65,6 +65,14 @@ function registerBrowseHandlers(bot) {
     await showFeaturedProducts(ctx, lang)
   })
 
+  // ─── For You (Personalized) ───────────────────────────────────
+  bot.action(/^store:foryou(:page:(\d+))?$/, async (ctx) => {
+    await ctx.answerCbQuery()
+    const page = ctx.match[2] ? parseInt(ctx.match[2]) : 1
+    const lang = ctx.session?.language || 'sw'
+    await showPersonalizedProducts(ctx, page, lang)
+  })
+
   // ─── Add to Wishlist ──────────────────────────────────────────
   bot.action(/^store:wish:add:(\d+)$/, async (ctx) => {
     const productId = parseInt(ctx.match[1])
@@ -216,13 +224,62 @@ async function showCategories(ctx, lang = 'sw') {
     )
   ])
 
-  // Bidhaa Maarufu
-  catButtons.push([Markup.button.callback(lang === 'sw' ? '⭐ Bidhaa Maarufu' : '⭐ Featured', 'store:featured')])
+  // Bidhaa Maarufu na For You
+  catButtons.push([
+    Markup.button.callback(lang === 'sw' ? '⭐ Bidhaa Maarufu' : '⭐ Featured', 'store:featured'),
+    Markup.button.callback(lang === 'sw' ? '✨ Kwa Ajili Yako' : '✨ For You', 'store:foryou')
+  ])
   catButtons.push([Markup.button.callback(lang === 'sw' ? '◀️ Nyumbani' : '◀️ Home', 'store:menu')])
 
   await ctx.editMessageText(title, {
     parse_mode: 'MarkdownV2',
     ...Markup.inlineKeyboard(catButtons),
+  })
+}
+
+async function showPersonalizedProducts(ctx, page = 1, lang = 'sw') {
+  const user = await getDbUser(ctx.from.id)
+  if (!user) return
+
+  const { getRecommendations } = require('../services/productService')
+  
+  // Custom fetch function that works like getProductsPage but specifically for user recommendations
+  const result = await getRecommendations(user.id, page, 5)
+
+  if (result.products.length === 0) {
+    const msg = lang === 'sw'
+      ? '✨ Hatujapata mapendekezo kwa sasa\\. Nunua bidhaa ili tuweze kukupa mapendekezo yanayokufaa\\.'
+      : '✨ No recommendations yet\\. Buy some products so we can give you personalized suggestions\\.'
+
+    await ctx.editMessageText(msg, {
+      parse_mode: 'MarkdownV2',
+      ...Markup.inlineKeyboard([[Markup.button.callback('◀️', 'store:browse')]]),
+    })
+    return
+  }
+
+  const title = lang === 'sw' ? '✨ *Bidhaa Maalum Kwa Ajili Yako*' : '✨ *Products Picked For You*'
+  let text = `${title}\n\n`
+  
+  const buttons = result.products.map(p => {
+    const price = isDiscountActive(p) ? p.discountTzs : p.priceTzs
+    return [Markup.button.callback(`${p.name.substring(0, 22)} — TZS ${price.toLocaleString('en-US')}`, `store:product:${p.id}`)]
+  })
+
+  // Pagination if needed
+  if (result.totalPages > 1) {
+    const pagination = []
+    if (page > 1) pagination.push(Markup.button.callback('◀️', `store:foryou:page:${page - 1}`))
+    pagination.push(Markup.button.callback(`${page} / ${result.totalPages}`, 'ignore'))
+    if (page < result.totalPages) pagination.push(Markup.button.callback('▶️', `store:foryou:page:${page + 1}`))
+    buttons.push(pagination)
+  }
+
+  buttons.push([Markup.button.callback('◀️ Rudi', 'store:browse')])
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'MarkdownV2',
+    ...Markup.inlineKeyboard(buttons),
   })
 }
 

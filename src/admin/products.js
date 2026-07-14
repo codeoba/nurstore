@@ -730,12 +730,72 @@ async function saveProduct(ctx, wizard) {
       `📦 *${escapeMarkdown(product.name)}*\n` +
       `🆔 ID: ${product.id}\n` +
       `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(product.priceUsd.toFixed(2))}\\)`,
-      { parse_mode: 'MarkdownV2', ...backToProductsKeyboard() }
+      {
+        parse_mode: 'MarkdownV2',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📢 Watangazie Wateja (Broadcast)', `admin:prod:broadcast_new:${product.id}`)],
+          [Markup.button.callback('◀️ Bidhaa', 'admin:products')]
+        ])
+      }
     )
   } catch (err) {
     logger.error('Product creation failed', { error: err.message })
     await ctx.reply(`❌ Hitilafu: ${err.message}`, backToProductsKeyboard())
   }
+}
+
+// ─── Broadcast New Product ────────────────────────────────────
+
+function registerAdminProductBroadcastHandlers(bot) {
+  bot.action(/^admin:prod:broadcast_new:(\d+)$/, isAdmin, async (ctx) => {
+    const productId = parseInt(ctx.match[1])
+    await ctx.answerCbQuery('Inatuma notifications...')
+
+    try {
+      const product = await require('../database').prisma.product.findUnique({ where: { id: productId } })
+      if (!product) throw new Error('Bidhaa haipatikani')
+
+      const users = await require('../database').prisma.user.findMany({
+        where: { wantsNotifications: true }
+      })
+
+      if (users.length === 0) {
+        await ctx.reply('❌ Hakuna wateja waliojisajili kupokea taarifa.')
+        return
+      }
+
+      const { formatProductCard } = require('../utils/formatting')
+      const textSw = `🔔 *Bidhaa Mpya Imeongezwa!*\n\n${formatProductCard(product, 'sw')}`
+
+      let sentCount = 0
+      for (const user of users) {
+        try {
+          // You could optimize this with batches
+          await bot.telegram.sendMessage(
+            Number(user.telegramId),
+            textSw,
+            {
+              parse_mode: 'MarkdownV2',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('🛍️ Inunue Sasa', `store:order:init:${product.id}`)]
+              ])
+            }
+          )
+          sentCount++
+        } catch (e) {
+          // ignore blocked users
+        }
+      }
+
+      await auditLog(ctx.from.id, 'broadcast.new_product', { productId, sentCount })
+      await ctx.editMessageText(`✅ Notifications zimetumwa kwa wateja ${sentCount}!`, {
+        ...Markup.inlineKeyboard([[Markup.button.callback('◀️ Bidhaa', 'admin:products')]])
+      })
+    } catch (err) {
+      logger.error('Broadcast failed', { error: err.message })
+      await ctx.reply(`❌ Hitilafu: ${err.message}`)
+    }
+  })
 }
 
 // ─── Discount Step ────────────────────────────────────────────
@@ -987,4 +1047,5 @@ module.exports = {
   registerAdminProductHandlers,
   handleAdminProductWizard,
   registerWizardCategoryCallback,
+  registerAdminProductBroadcastHandlers: typeof registerAdminProductBroadcastHandlers !== 'undefined' ? registerAdminProductBroadcastHandlers : null
 }

@@ -85,6 +85,8 @@ model User {
   isVip            Boolean        @default(false) @map("is_vip")
   vipExpiresAt     DateTime?      @map("vip_expires_at")
   commissionEarned Int            @default(0) @map("commission_earned") // commission from referrals in TZS
+  wantsNotifications Boolean      @default(true) @map("wants_notifications")
+  lastFreeDropAt   DateTime?      @map("last_free_drop_at")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
@@ -96,6 +98,7 @@ model User {
   cartItems        CartItem[]
   wishlist         WishlistItem[]
   wallet           Wallet?
+  challenges       UserChallenge[]
 
   @@map("users")
 }
@@ -428,5 +431,18 @@ model Gift {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("gifts")
+}
+
+model UserChallenge {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  challengeId String    @map("challenge_id") // e.g. "weekly_3_purchases_2026_w28"
+  reward      Int       @default(0) // TZS rewarded
+  completedAt DateTime  @default(now()) @map("completed_at")
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, challengeId])
+  @@map("user_challenges")
 }
 
