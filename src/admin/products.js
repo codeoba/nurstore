@@ -803,7 +803,7 @@ function registerAdminProductBroadcastHandlers(bot) {
       }
 
       const { formatProductCard } = require('../utils/formatting')
-      const textSw = `🔔 *Bidhaa Mpya Imeongezwa!*\n\n${formatProductCard(product, 'sw')}`
+      const textSw = `🔔 *Bidhaa Mpya Imeongezwa\\!*\n\n${formatProductCard(product, 'sw')}`
 
       let sentCount = 0
       for (const user of users) {
