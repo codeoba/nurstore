@@ -80,7 +80,7 @@ function formatProductCard(product, lang = 'sw') {
       text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE INAISHA BAADA YA' : 'FLASH SALE ENDS IN'}:*\n`
       text += `⏳ _${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}_\n`
     } else {
-      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE (FLASH SALE)' : 'FLASH SALE'}*\n`
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE \\(FLASH SALE\\)' : 'FLASH SALE'}*\n`
     }
   }
   
@@ -136,7 +136,7 @@ function formatTextProductPreview(product, lang = 'sw') {
       text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE INAISHA BAADA YA' : 'FLASH SALE ENDS IN'}:*\n`
       text += `⏳ _${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}_\n`
     } else {
-      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE (FLASH SALE)' : 'FLASH SALE'}*\n`
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE \\(FLASH SALE\\)' : 'FLASH SALE'}*\n`
     }
   }
 
