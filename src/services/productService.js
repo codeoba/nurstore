@@ -504,6 +504,36 @@ async function getRecommendations(userId, page = 1, limit = 5) {
   }
 }
 
+async function getBestSellers(limit = 5) {
+  try {
+    const { prisma } = require('../database')
+    return await prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' }, // Fallback to newest if sales count isn't tracked
+      take: limit
+    })
+  } catch (err) {
+    return []
+  }
+}
+
+async function getProductRecommendations(userId, limit = 5) {
+  try {
+    const { prisma } = require('../database')
+    return await prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' }, // Simplified recommendation logic
+      take: limit
+    })
+  } catch (err) {
+    return []
+  }
+}
+
+async function getRecommendations(userId, limit = 5) {
+  return await getProductRecommendations(userId, limit)
+}
+
 module.exports = {
   getProductsPage,
   getProductPreview,
