@@ -107,6 +107,7 @@ async function getProductPreview(productId) {
       salesCount: true,
       subscriptionDays: true,
       contentFormat: true,
+      bundledIds: true,
       category: { select: { id: true, name: true } },
       reviews: {
         take: 3,
@@ -121,6 +122,15 @@ async function getProductPreview(productId) {
       // MUHIMU SANA: lockedContent HAIPO HAPA - kamwe isitoke
     },
   })
+
+  if (product && product.productType === 'bundle' && product.bundledIds && product.bundledIds.length > 0) {
+    const bundledProducts = await prisma.product.findMany({
+      where: { id: { in: product.bundledIds } },
+      select: { id: true, name: true, nameEn: true, productType: true }
+    })
+    // Sort them to match the order in bundledIds if possible, or just attach
+    product.bundledProducts = bundledProducts
+  }
 
   return product
 }

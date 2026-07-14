@@ -400,6 +400,7 @@ async function redeliverProduct(bot, telegramUserId, orderId, productId) {
           lockedContent: true,
           contentFormat: true,
           subscriptionDays: true,
+          bundledIds: true,
         },
       },
       order: { select: { id: true } },
@@ -417,6 +418,19 @@ async function redeliverProduct(bot, telegramUserId, orderId, productId) {
     await deliverFile(bot, telegramUserId, product, fakeOrder)
   } else if (product.productType === 'text_content') {
     await deliverTextContent(bot, telegramUserId, product, fakeOrder)
+  } else if (product.productType === 'bundle') {
+    const bundledProducts = await prisma.product.findMany({
+      where: { id: { in: product.bundledIds || [] } }
+    })
+    for (const bProduct of bundledProducts) {
+      if (bProduct.productType === 'file') {
+        await deliverFile(bot, telegramUserId, bProduct, fakeOrder)
+      } else if (bProduct.productType === 'text_content') {
+        await deliverTextContent(bot, telegramUserId, bProduct, fakeOrder)
+      } else if (bProduct.productType === 'subscription') {
+        await bot.telegram.sendMessage(telegramUserId, `🔄 Usajili: ${bProduct.name}`)
+      }
+    }
   } else {
     await bot.telegram.sendMessage(
       telegramUserId,

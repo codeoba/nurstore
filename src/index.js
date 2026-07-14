@@ -259,8 +259,8 @@ async function handleCouponCreateWizard(ctx, wizard) {
         '✅ Code: ' + wizard.data.code + '\n\nChagua aina ya punguzo:',
         require('telegraf').Markup.inlineKeyboard([
           [
-            require('telegraf').Markup.button.callback('💫 Stars Fixed', 'admin:wizard:coupon:fixed'),
-            require('telegraf').Markup.button.callback('% Percentage', 'admin:wizard:coupon:percentage'),
+            require('telegraf').Markup.button.callback('💰 Kiasi Kamili (TZS)', 'admin:wizard:coupon:fixed'),
+            require('telegraf').Markup.button.callback('% Asilimia', 'admin:wizard:coupon:percentage'),
           ],
         ])
       )
@@ -280,20 +280,20 @@ async function handleCouponCreateWizard(ctx, wizard) {
     case 'usage_limit': {
       const limit = text?.toLowerCase() === 'unlimited' ? null : parseNumber(text)
       wizard.data.usageLimit = limit
-      wizard.step = 'min_stars'
-      await ctx.reply('Andika bei ya chini ya order kwa Stars (au 0 kwa hakuna mipaka):')
+      wizard.step = 'min_tzs'
+      await ctx.reply('Andika bei ya chini ya order kwa TZS (au 0 kwa hakuna mipaka):')
       break
     }
-    case 'min_stars': {
+    case 'min_tzs': {
       const min = parseNumber(text) || 0
-      wizard.data.minStars = min > 0 ? min : null
+      wizard.data.minTzs = min > 0 ? min : null
 
       // Unda coupon
       ctx.session.adminWizard = null
       try {
         const coupon = await createCoupon(wizard.data)
         await auditLog(ctx.from.id, 'coupon.created', { couponId: coupon.id, code: coupon.code })
-        await ctx.reply(`✅ Coupon \`${coupon.code}\` imeundwa!\n\nThamani: ${coupon.discountValue}${coupon.discountType === 'percentage' ? '%' : '⭐'}`)
+        await ctx.reply(`✅ Coupon \`${coupon.code}\` imeundwa!\n\nThamani: ${coupon.discountType === 'percentage' ? coupon.discountValue + '%' : 'TZS ' + coupon.discountValue.toLocaleString('en-US')}`)
       } catch (err) {
         await ctx.reply(`❌ Hitilafu: ${err.message}`)
       }

@@ -56,11 +56,20 @@ function formatProductCard(product, lang = 'sw') {
   }
 
   // Format type
-  const typeIcons = { file: '📁', text_content: '📄', subscription: '🔄' }
+  const typeIcons = { file: '📁', text_content: '📄', subscription: '🔄', bundle: '📦' }
   const typeStr = formatProductType(product.productType, lang)
   
   text += `📦 *${lang === 'sw' ? 'Utapokea' : 'You Will Receive'}*\n`
   text += `${typeIcons[product.productType] || '📧'} ${escapeMarkdown(typeStr)}\n`
+  
+  if (product.productType === 'bundle' && product.bundledProducts && product.bundledProducts.length > 0) {
+    text += `\n*${lang === 'sw' ? 'Kifurushi Hiki Kina:' : 'This Bundle Contains:'}*\n`
+    for (const bp of product.bundledProducts) {
+      const bpName = lang === 'en' && bp.nameEn ? bp.nameEn : bp.name
+      text += `🔸 ${typeIcons[bp.productType] || '📧'} ${escapeMarkdown(bpName)}\n`
+    }
+  }
+  
   text += `🚀 ${lang === 'sw' ? 'Inatumwa mara moja baada ya malipo' : 'Ready to Use After Activation'}\n`
   text += `━━━━━━━━━━━━━━━━━━━━\n`
   

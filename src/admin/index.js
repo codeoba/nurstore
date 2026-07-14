@@ -398,7 +398,8 @@ function registerCouponHandlers(bot) {
     for (const c of coupons) {
       const status = c.isActive ? '✅' : '❌'
       const used = `${c.usedCount}${c.usageLimit ? `/${c.usageLimit}` : ''}`
-      text += `${status} \`${escapeMarkdown(c.code)}\` — ${c.discountValue}${c.discountType === 'percentage' ? '%' : '⭐'} — Imetumika: ${used}\n`
+      const val = c.discountType === 'percentage' ? `${c.discountValue}%` : `TZS ${c.discountValue.toLocaleString('en-US')}`
+      text += `${status} \`${escapeMarkdown(c.code)}\` — ${escapeMarkdown(val)} — Imetumika: ${used}\n`
     }
 
     await ctx.editMessageText(text, {
@@ -430,6 +431,23 @@ function registerCouponHandlers(bot) {
     // Refresh orodha
     ctx.callbackQuery.data = 'admin:coupons'
     await bot.handleUpdate({ callback_query: ctx.callbackQuery })
+  })
+
+  // Aina ya coupon
+  bot.action(/^admin:wizard:coupon:(fixed|percentage)$/, isAdmin, async (ctx) => {
+    await ctx.answerCbQuery()
+    const wizard = ctx.session?.adminWizard
+    if (wizard?.scene !== 'couponCreate' || wizard.step !== 'type') return
+
+    const type = ctx.match[1] === 'fixed' ? 'fixed_tzs' : 'percentage'
+    wizard.data.discountType = type
+    wizard.step = 'value'
+
+    await ctx.editMessageText(
+      `✅ Aina: ${type === 'percentage' ? 'Asilimia (%)' : 'Kiasi Kamili (TZS)'}\n\n` +
+      `Andika thamani ya punguzo (Mfano: ${type === 'percentage' ? '20 kwa 20%' : '5000 kwa TZS 5,000'}):`,
+      { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Ghairi', 'admin:coupons')]]) }
+    )
   })
 }
 
