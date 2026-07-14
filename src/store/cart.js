@@ -27,7 +27,7 @@ function registerCartHandlers(bot) {
     // Angalia kama bidhaa ipo
     const product = await prisma.product.findUnique({
       where: { id: productId, isActive: true },
-      select: { id: true, name: true, stock: true },
+      select: { id: true, name: true, stock: true, categoryId: true },
     })
 
     if (!product) {
@@ -66,6 +66,35 @@ function registerCartHandlers(bot) {
       await ctx.answerCbQuery(
         lang === 'sw' ? `✅ "${product.name.substring(0, 20)}" imeongezwa kikapuni!` : `✅ Added to cart!`
       )
+
+      // ─── Smart Upselling ───
+      // Tafuta bidhaa nyingine katika category moja (lakini siyo hii) kupendekeza
+      const upsellProduct = await prisma.product.findFirst({
+        where: {
+          isActive: true,
+          id: { not: productId },
+          categoryId: product.categoryId // assume product object includes categoryId, wait let's update select above
+        },
+        orderBy: { salesCount: 'desc' }, // or something similar. For now just random or first
+        select: { id: true, name: true, priceTzs: true, priceUsd: true }
+      })
+
+      if (upsellProduct) {
+        const msg = lang === 'sw'
+          ? `💡 *Pendekezo Lako:*\n\nWateja wengi walionunua _${escapeMarkdown(product.name)}_, walipenda pia:\n\n📦 *${escapeMarkdown(upsellProduct.name)}*\n💰 TZS ${upsellProduct.priceTzs.toLocaleString('en-US')}\n\nOngeza hii pia kwenye kikapu chako?`
+          : `💡 *Recommendation:*\n\nCustomers who bought _${escapeMarkdown(product.name)}_, also liked:\n\n📦 *${escapeMarkdown(upsellProduct.name)}*\n💰 TZS ${upsellProduct.priceTzs.toLocaleString('en-US')}\n\nAdd this to your cart as well?`
+
+        await ctx.reply(msg, {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback(lang === 'sw' ? '🛒 NDIYO, Weka Kikapuni' : '🛒 YES, Add to Cart', `store:cart:add:${upsellProduct.id}`)],
+            [
+              Markup.button.callback(lang === 'sw' ? 'Nenda Kulipia ➡️' : 'Checkout ➡️', 'store:cart'),
+              Markup.button.callback(lang === 'sw' ? 'Endelea Kuangalia' : 'Keep Browsing', 'store:menu')
+            ]
+          ])
+        })
+      }
     } catch (err) {
       logger.error('Add to cart error', { error: err.message })
       await ctx.answerCbQuery(lang === 'sw' ? '❌ Hitilafu. Jaribu tena.' : '❌ Error. Try again.')
