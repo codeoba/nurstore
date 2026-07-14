@@ -228,6 +228,47 @@ async function showMainMenu(ctx) {
   }
 }
 
+// ─── About Us ─────────────────────────────────────────────────
+
+async function showAbout(ctx) {
+  const lang = ctx.session?.language || 'sw'
+  
+  const text = lang === 'sw'
+    ? [
+        `ℹ️ *Kuhusu Sisi*`,
+        ``,
+        `Sisi ni duka namba moja kwa ajili ya bidhaa za dijiti\\.`,
+        `Tunatoa huduma zenye ubora na uhakika wa asilimia 100\\.`,
+        ``,
+        `📞 *Mawasiliano & Msaada:*`,
+        `Ikiwa una swali au changamoto yoyote, tafadhali bofya kitufe cha Msaada hapo chini au wasiliana na Support yetu\\.`,
+        ``,
+        `🌐 *Asante kwa kutuchagua\\!*`,
+      ].join('\n')
+    : [
+        `ℹ️ *About Us*`,
+        ``,
+        `We are the number one store for digital products\\.`,
+        `We provide high\\-quality services with 100% reliability\\.`,
+        ``,
+        `📞 *Contact & Support:*`,
+        `If you have any questions or issues, please click the Support button below or contact our Support team\\.`,
+        ``,
+        `🌐 *Thank you for choosing us\\!*`,
+      ].join('\n')
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'sw' ? '💬 Msaada' : '💬 Support', 'store:support')],
+    [Markup.button.callback(lang === 'sw' ? '◀️ Rudi Nyumbani' : '◀️ Back to Menu', 'store:menu')]
+  ])
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  } else {
+    await ctx.reply(text, { parse_mode: 'MarkdownV2', ...keyboard })
+  }
+}
+
 // ─── Profile ──────────────────────────────────────────────────
 
 async function showProfile(ctx) {
