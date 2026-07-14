@@ -767,7 +767,7 @@ async function saveProduct(ctx, wizard) {
       `📦 *${escapeMarkdown(product.name)}*\n` +
       `🆔 ID: ${product.id}\n` +
       `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(product.priceUsd.toFixed(2))}\\)\n` +
-      (isScheduled ? `📅 *Itakuwa hewani:* ${escapeMarkdown(product.publishAt.toLocaleString('sw-TZ'))}` : `⚡ *Ipo Hewani Sasa!*`),
+      (isScheduled ? `📅 *Itakuwa hewani:* ${escapeMarkdown(product.publishAt.toLocaleString('sw-TZ'))}` : `⚡ *Ipo Hewani Sasa\\!*`),
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
