@@ -11,6 +11,17 @@ function formatTzs(amount) {
   return `${amount.toLocaleString('en-US')} TZS`
 }
 
+/**
+ * Badilisha Telegram Stars kuwa TZS
+ * @param {number} stars
+ * @returns {string}
+ */
+function starsToTzs(stars) {
+  // Makadirio: 1 Star ~ 40 TZS (unaweza kurekebisha kulingana na config)
+  const rate = 40
+  return `${(stars * rate).toLocaleString('en-US')} TZS`
+}
+
 // ─── Product Formatting ──────────────────────────────────────
 
 /**
@@ -280,6 +291,7 @@ function escapeMarkdown(text) {
 
 module.exports = {
   formatTzs,
+  starsToTzs,
   formatProductCard,
   formatProductType,
   formatTextProductPreview,
