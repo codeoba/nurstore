@@ -875,33 +875,101 @@ async function handleDiscountStep(ctx, wizard, text) {
     data.discountUsd = discountUsd
     wizard.step = 'end_date'
     await ctx.reply(
-      `✅ Bei ya punguzo: TZS ${discountTzs.toLocaleString('en-US')} (approx. $${discountUsd})\n\nPunguzo linaisha lini?\n_Format: YYYY-MM-DD (mfano: 2024-12-31)_\n_Au "forever" kwa punguzo la kudumu_`,
+      `✅ Bei ya punguzo: TZS ${discountTzs.toLocaleString('en-US')} (approx. $${discountUsd})\n\n` +
+      `⏳ <b>OFA KABAMBE (FLASH SALE) INAISHA LINI?</b>\n` +
+      `<i>Andika masaa (mfano: 24h), dakika (mfano: 30m), tarehe (YYYY-MM-DD), au "forever"</i>`,
+      { parse_mode: 'HTML' }
     )
     return true
   }
 
   if (step === 'end_date') {
     let endsAt = null
-    if (text && text.toLowerCase() !== 'forever') {
-      const date = new Date(text)
-      if (isNaN(date.getTime())) {
-        await ctx.reply('⚠️ Format si sahihi. Tumia YYYY-MM-DD au "forever"')
-        return true
+    const input = text ? text.toLowerCase().trim() : ''
+
+    if (input && input !== 'forever') {
+      if (input.endsWith('h')) {
+        const hours = parseFloat(input.replace('h', ''))
+        if (isNaN(hours) || hours <= 0) {
+          await ctx.reply('⚠️ Masaa si sahihi. Mfano: 24h')
+          return true
+        }
+        endsAt = new Date(Date.now() + hours * 60 * 60 * 1000)
+      } else if (input.endsWith('m')) {
+        const mins = parseFloat(input.replace('m', ''))
+        if (isNaN(mins) || mins <= 0) {
+          await ctx.reply('⚠️ Dakika si sahihi. Mfano: 30m')
+          return true
+        }
+        endsAt = new Date(Date.now() + mins * 60 * 1000)
+      } else {
+        const date = new Date(text)
+        if (isNaN(date.getTime())) {
+          await ctx.reply('⚠️ Format si sahihi. Tumia masaa (24h), dakika (30m), YYYY-MM-DD au "forever"')
+          return true
+        }
+        endsAt = date
       }
-      endsAt = date
     }
 
-    await setProductDiscount(data.productId, data.discountTzs, data.discountUsd, new Date(), endsAt)
+    data.endsAt = endsAt
+    wizard.step = 'broadcast_prompt'
+    await ctx.reply(
+      `📢 <b>JE, TUWATANGAZIE WATEJA KUHUSU FLASH SALE HII?</b>\n\n` +
+      `Wateja wote watapata ujumbe kuhusu ofa hii.\n` +
+      `Andika <b>ndiyo</b> kutangaza, au <b>hapana</b> kuendelea kimya kimya.`,
+      { parse_mode: 'HTML' }
+    )
+    return true
+  }
+
+  if (step === 'broadcast_prompt') {
+    const input = text ? text.toLowerCase().trim() : ''
+    const shouldBroadcast = input === 'ndiyo' || input === 'yes' || input === '1'
+
+    await setProductDiscount(data.productId, data.discountTzs, data.discountUsd, new Date(), data.endsAt)
     await auditLog(ctx.from.id, 'product.discount_set', {
       productId: data.productId,
       discountTzs: data.discountTzs,
       discountUsd: data.discountUsd,
     })
     ctx.session.adminWizard = null
+    
     await ctx.reply(
-      `✅ Punguzo limewekwa: TZS ${data.discountTzs.toLocaleString('en-US')} (approx. $${data.discountUsd})${endsAt ? ` hadi ${endsAt.toLocaleDateString()}` : ' (forever)'}`,
+      `✅ Punguzo limewekwa: TZS ${data.discountTzs.toLocaleString('en-US')} (approx. $${data.discountUsd})${data.endsAt ? ` hadi ${data.endsAt.toLocaleString('sw-TZ')}` : ' (forever)'}`,
       backToProductsKeyboard()
     )
+
+    if (shouldBroadcast) {
+      // Create a fake callback query context to reuse existing broadcast handler, or just trigger it directly
+      // Since it's easier, let's just trigger the broadcast logic inline here for simplicity
+      await ctx.reply('Inatuma notifications za Flash Sale...')
+      try {
+        const product = await require('../database').prisma.product.findUnique({ where: { id: data.productId } })
+        const users = await require('../database').prisma.user.findMany({ where: { wantsNotifications: true } })
+        if (users.length > 0) {
+          const { formatProductCard } = require('../utils/formatting')
+          const textSw = `⚡ <b>OFA KABAMBE (FLASH SALE)!</b> 🔥\n\n${formatProductCard(product, 'sw').replace(/\*/g, '<b>').replace(/_/g, '<i>').replace(/\\/g, '')}` // crude markdown to html
+          let sentCount = 0
+          for (const user of users) {
+            try {
+              await require('../database').bot.telegram.sendMessage(
+                Number(user.telegramId),
+                `⚡ <b>OFA KABAMBE!</b> 🔥\n\nBidhaa hii imewekwa Punguzo la Muda! Wahi sasa:\n\n📦 <b>${product.name}</b>\n💰 TZS ${data.discountTzs.toLocaleString('en-US')}\n⏳ Mwisho: ${data.endsAt ? data.endsAt.toLocaleString('sw-TZ') : 'Kudumu'}`,
+                {
+                  parse_mode: 'HTML',
+                  ...Markup.inlineKeyboard([[Markup.button.callback('🛍️ Inunue Sasa', `store:order:init:${product.id}`)]])
+                }
+              )
+              sentCount++
+            } catch (e) {}
+          }
+          await ctx.reply(`✅ Flash Sale imetangazwa kwa wateja ${sentCount}!`)
+        }
+      } catch (err) {
+        logger.error('Flash sale broadcast failed', { error: err.message })
+      }
+    }
     return true
   }
 

@@ -75,8 +75,13 @@ function formatProductCard(product, lang = 'sw') {
   text += `🛡 *Warranty:* ${escapeMarkdown(lang === 'sw' ? 'Uhakika 100%' : '100% Guaranteed')}\n`
   text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
 
-  if (activeDiscount && product.discountEndsAt) {
-    text += `⏳ *${lang === 'sw' ? 'Mwisho wa Punguzo:' : 'Discount Ends In:'}* ${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}\n`
+  if (activeDiscount) {
+    if (product.discountEndsAt) {
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE INAISHA BAADA YA' : 'FLASH SALE ENDS IN'}:*\n`
+      text += `⏳ _${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}_\n`
+    } else {
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE (FLASH SALE)' : 'FLASH SALE'}*\n`
+    }
   }
   
   if (product.stock !== null) {
@@ -126,8 +131,13 @@ function formatTextProductPreview(product, lang = 'sw') {
 
   text += `💵 *Price:* TZS ${tzs.toLocaleString('en-US')}\n`
 
-  if (activeDiscount && product.discountEndsAt) {
-    text += `⏳ *${lang === 'sw' ? 'Mwisho wa Punguzo:' : 'Discount Ends In:'}* ${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}\n`
+  if (activeDiscount) {
+    if (product.discountEndsAt) {
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE INAISHA BAADA YA' : 'FLASH SALE ENDS IN'}:*\n`
+      text += `⏳ _${escapeMarkdown(formatTimeRemaining(product.discountEndsAt, lang))}_\n`
+    } else {
+      text += `\n⚡ 🔥 *${lang === 'sw' ? 'OFA KABAMBE (FLASH SALE)' : 'FLASH SALE'}*\n`
+    }
   }
 
   const sold = product.salesCount || 0
