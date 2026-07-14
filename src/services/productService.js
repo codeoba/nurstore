@@ -504,34 +504,40 @@ async function getRecommendations(userId, page = 1, limit = 5) {
   }
 }
 
-async function getBestSellers(limit = 5) {
+async function getProductRecommendations(userId, page = 1, limit = 5) {
   try {
     const { prisma } = require('../database')
-    return await prisma.product.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' }, // Fallback to newest if sales count isn't tracked
-      take: limit
-    })
+    const skip = (page - 1) * limit
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' }, // Simplified recommendation logic
+        skip,
+        take: limit
+      }),
+      prisma.product.count({
+        where: { isActive: true }
+      })
+    ])
+
+    return {
+      products,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      hasNext: skip + limit < total,
+      hasPrev: page > 1,
+    }
   } catch (err) {
-    return []
+    return {
+      products: [], total: 0, page: 1, totalPages: 1, hasNext: false, hasPrev: false
+    }
   }
 }
 
-async function getProductRecommendations(userId, limit = 5) {
-  try {
-    const { prisma } = require('../database')
-    return await prisma.product.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' }, // Simplified recommendation logic
-      take: limit
-    })
-  } catch (err) {
-    return []
-  }
-}
-
-async function getRecommendations(userId, limit = 5) {
-  return await getProductRecommendations(userId, limit)
+async function getRecommendations(userId, page = 1, limit = 5) {
+  return await getProductRecommendations(userId, page, limit)
 }
 
 module.exports = {
