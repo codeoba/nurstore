@@ -4,6 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const { prisma } = require('../database')
 const { addWatermark } = require('../utils/watermark')
+const { addPdfWatermark } = require('../utils/pdfWatermark')
 const logger = require('../utils/logger')
 const config = require('../config')
 
@@ -107,7 +108,10 @@ async function deliverOrder(bot, telegramUserId, order) {
       // Mark item kama imetumwa
       await prisma.orderItem.updateMany({
         where: { orderId: order.id, productId: product.id },
-        data: { isDelivered: true },
+        data: { 
+          isDelivered: true,
+          deliveryCount: { increment: 1 } 
+        },
       })
 
       deliveredCount++
@@ -171,6 +175,7 @@ async function deliverFile(bot, telegramUserId, product, order) {
     const msg = await bot.telegram.sendMessage(telegramUserId, text, {
       parse_mode: 'HTML',
       disable_web_page_preview: true,
+      protect_content: true, // Zuia Forward/Screenshot
     })
 
     logger.info('File link delivered successfully', { productId: product.id, orderId: order.id })
@@ -179,13 +184,17 @@ async function deliverFile(bot, telegramUserId, product, order) {
 
   // Kama faili tayari lina Telegram file_id, tumia hiyo
   if (product.fileTelegramId) {
-    const msg = await bot.telegram.sendDocument(telegramUserId, product.fileTelegramId, {
-      caption: receiptHeader + `<i>Faili lako limeambatishwa hapa chini.</i>`,
-      parse_mode: 'HTML',
-    })
+    // Bypass cache kama ni PDF ili kila mtu apate watermark yake
+    if (!product.fileOriginalName?.toLowerCase().endsWith('.pdf') && !product.filePath?.toLowerCase().endsWith('.pdf')) {
+      const msg = await bot.telegram.sendDocument(telegramUserId, product.fileTelegramId, {
+        caption: receiptHeader + `<i>Faili lako limeambatishwa hapa chini.</i>`,
+        parse_mode: 'HTML',
+        protect_content: true,
+      })
 
-    logger.info('File delivered via file_id', { productId: product.id, orderId: order.id })
-    return msg
+      logger.info('File delivered via file_id', { productId: product.id, orderId: order.id })
+      return msg
+    }
   }
 
   // Tuma kutoka local storage
@@ -198,7 +207,19 @@ async function deliverFile(bot, telegramUserId, product, order) {
       throw new Error(`File haipo kwenye server: ${product.filePath}`)
     }
 
-    const fileStream = fs.createReadStream(fullPath)
+    const isPdf = fullPath.toLowerCase().endsWith('.pdf')
+    let fileToSend = fullPath
+    let isTempFile = false
+
+    if (isPdf) {
+      const crypto = require('crypto')
+      const tempFilename = `watermarked_${order.id}_${crypto.randomBytes(4).toString('hex')}.pdf`
+      fileToSend = path.join(config.storage.uploadDir, tempFilename)
+      await addPdfWatermark(fullPath, fileToSend, order)
+      isTempFile = true
+    }
+
+    const fileStream = fs.createReadStream(fileToSend)
     const filename = product.fileOriginalName || path.basename(product.filePath)
 
     const msg = await bot.telegram.sendDocument(
@@ -207,15 +228,20 @@ async function deliverFile(bot, telegramUserId, product, order) {
       {
         caption: receiptHeader + `<i>Faili lako limeambatishwa hapa chini.</i>`,
         parse_mode: 'HTML',
+        protect_content: true,
       }
     )
 
-    // Cache file_id ya Telegram kwa matumizi ya baadaye
-    if (msg.document?.file_id) {
+    // Cache file_id ya Telegram kwa matumizi ya baadaye (Kama sio PDF lenye watermark)
+    if (msg.document?.file_id && !isPdf) {
       await prisma.product.update({
         where: { id: product.id },
         data: { fileTelegramId: msg.document.file_id },
       }).catch(() => {})
+    }
+
+    if (isTempFile) {
+      fs.unlink(fileToSend, () => {})
     }
 
     logger.info('File delivered from storage', { productId: product.id, orderId: order.id })
@@ -275,10 +301,11 @@ async function deliverTextContent(bot, telegramUserId, product, order) {
     try {
       await bot.telegram.sendMessage(telegramUserId, chunks[i], {
         parse_mode: 'HTML',
+        protect_content: true,
       })
       if (!isLast) await sleep(500)
     } catch (err) {
-      await bot.telegram.sendMessage(telegramUserId, chunks[i]).catch(() => {})
+      await bot.telegram.sendMessage(telegramUserId, chunks[i], { protect_content: true }).catch(() => {})
     }
   }
 

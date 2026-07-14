@@ -266,6 +266,7 @@ model OrderItem {
   priceUsdAtPurchase Float   @map("price_usd_at_purchase")
   quantity           Int     @default(1)
   isDelivered        Boolean @default(false) @map("is_delivered")
+  deliveryCount      Int     @default(0) @map("delivery_count")
 
   order              Order   @relation(fields: [orderId], references: [id])
   product            Product @relation(fields: [productId], references: [id])
@@ -446,3 +447,25 @@ model UserChallenge {
   @@map("user_challenges")
 }
 
+model DownloadToken {
+  id          Int       @id @default(autoincrement())
+  token       String    @unique
+  orderItemId Int       @map("order_item_id")
+  expiresAt   DateTime  @map("expires_at")
+  usesCount   Int       @default(0) @map("uses_count")
+  maxUses     Int       @default(3) @map("max_uses")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("download_tokens")
+}
+
+model LeakReport {
+  id             Int       @id @default(autoincrement())
+  reporterId     Int       @map("reporter_id")
+  fileTelegramId String?   @map("file_telegram_id")
+  status         String    @default("pending") // pending | reviewed | action_taken
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@map("leak_reports")
+}

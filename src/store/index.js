@@ -93,6 +93,16 @@ function registerStoreRouter(bot) {
     await showAbout(ctx)
   })
 
+  // ─── DMCA / Leak Reporting ──────────────────────────────────
+  bot.command('report_leak', async (ctx) => {
+    ctx.session.userWizard = { scene: 'reportLeak' }
+    const msg = ctx.session.language === 'en'
+      ? `🚨 *Report Leaked Content*\n\nPlease send me the leaked file (PDF/Document) or text message, and I will scan it for watermarks to identify the source.`
+      : `🚨 *Ripoti Maudhui Yaliyovuja*\n\nTafadhali nitumie faili (PDF/Document) au ujumbe wa maandishi uliovuja, nami nitauchunguza ili kubaini chanzo chake (Watermark).`
+    
+    await ctx.reply(msg, { parse_mode: 'Markdown' })
+  })
+
   // ─── Language Selection ─────────────────────────────────────
   bot.action('store:language', async (ctx) => {
     await ctx.answerCbQuery()
