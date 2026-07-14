@@ -92,6 +92,19 @@ async function checkBlocked(ctx, next) {
 
     if (user?.isBlocked) {
       logger.security('BLOCKED_USER_ATTEMPT', { telegramId })
+      
+      // Notify Admin
+      try {
+        const { notifyAdmins } = require('../services/notificationService')
+        const username = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || String(telegramId)
+        await notifyAdmins(
+          ctx.telegram,
+          `⚠️ *Tahadhari ya Usalama*\n\nMteja aliyefungiwa anajaribu kutumia bot.\n👤 Mteja: ${username}\n🆔 ID: \`${telegramId}\``
+        )
+      } catch (e) {
+        // Ignored
+      }
+
       await ctx.reply('🚫 Umezuiwa kutumia bot hii. Wasiliana na msaada kwa maelezo zaidi.')
       return
     }

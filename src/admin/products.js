@@ -635,6 +635,38 @@ async function handleAddProductStep(ctx, wizard, text, document, photo) {
     case 'pre_order': {
       const input = text?.toLowerCase()?.trim()
       data.isPreOrder = (input === 'ndiyo' || input === 'yes' || input === '1')
+      wizard.step = 'publish_schedule'
+      await ctx.reply(
+        `📅 *Muda wa Ku-publish:*\n\n` +
+        `Je, ungependa kupanga muda (Schedule) bidhaa hii ianze kuonekana hewani?\n\n` +
+        `• Andika *sasa* (ku-publish papo hapo)\n` +
+        `• Au andika tarehe na muda. Mfano: *2024-12-01 14:30*`,
+        { parse_mode: 'MarkdownV2' }
+      )
+      return true
+    }
+
+    case 'publish_schedule': {
+      const input = text?.trim()
+      if (!input) return true
+
+      if (input.toLowerCase() === 'sasa' || input.toLowerCase() === 'now') {
+        data.publishAt = null
+        data.isActive = true
+      } else {
+        const date = new Date(input)
+        if (isNaN(date.getTime())) {
+          await ctx.reply('⚠️ Tarehe/Muda si sahihi. Mfano: 2024-12-01 14:30. Au andika "sasa" kama unataka ipande leo.')
+          return true
+        }
+        if (date < new Date()) {
+          await ctx.reply('⚠️ Muda huo umeshapita! Chagua muda ujao au andika "sasa".')
+          return true
+        }
+        data.publishAt = date
+        data.isActive = false
+      }
+
       await showProductConfirmation(ctx, wizard)
       return true
     }
@@ -698,6 +730,7 @@ async function showProductConfirmation(ctx, wizard) {
     `📊 Stock: ${escapeMarkdown(String(d.stock === null ? 'Unlimited' : d.stock))}`,
     `👑 VIP Only: ${d.isVipOnly ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     `🔜 Pre\\-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
+    `📅 Schedule: ${d.publishAt ? escapeMarkdown(d.publishAt.toLocaleString('sw-TZ')) : 'Papo Hapo ⚡'}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
     d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}\\.\\.\\.` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
@@ -721,19 +754,24 @@ async function saveProduct(ctx, wizard) {
     const product = await createProduct(d)
     await auditLog(ctx.from.id, 'product.created', { productId: product.id, name: product.name })
 
-    // Auto-post kwenye channel
-    const { postToChannel } = require('../services/channelService')
-    await postToChannel(ctx.tg || ctx.telegram ? ctx : { telegram: require('../database').bot.telegram }, product, true, 0)
+    if (!product.publishAt) {
+      // Auto-post kwenye channel (Kama siyo scheduled)
+      const { postToChannel } = require('../services/channelService')
+      await postToChannel(ctx.tg || ctx.telegram ? ctx : { telegram: require('../database').bot.telegram }, product, true, 0)
+    }
+
+    const isScheduled = !!product.publishAt
 
     await ctx.reply(
       `✅ *Bidhaa imeundwa kwa mafanikio\\!*\n\n` +
       `📦 *${escapeMarkdown(product.name)}*\n` +
       `🆔 ID: ${product.id}\n` +
-      `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(product.priceUsd.toFixed(2))}\\)`,
+      `💰 Bei: TZS ${product.priceTzs.toLocaleString('en-US')} \\(approx\\. $${escapeMarkdown(product.priceUsd.toFixed(2))}\\)\n` +
+      (isScheduled ? `📅 *Itakuwa hewani:* ${escapeMarkdown(product.publishAt.toLocaleString('sw-TZ'))}` : `⚡ *Ipo Hewani Sasa!*`),
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('📢 Watangazie Wateja (Broadcast)', `admin:prod:broadcast_new:${product.id}`)],
+          ...(isScheduled ? [] : [[Markup.button.callback('📢 Watangazie Wateja (Broadcast)', `admin:prod:broadcast_new:${product.id}`)]]),
           [Markup.button.callback('◀️ Bidhaa', 'admin:products')]
         ])
       }

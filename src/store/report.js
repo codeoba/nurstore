@@ -49,17 +49,26 @@ async function handleReportLeakWizard(ctx) {
   // Notify admin
   const { getSetting } = require('../admin/settings')
   const supportGroup = await getSetting('support_group_id').catch(() => null)
+  const msg = `🚨 *Ripoti ya Uvujaji (Leak Report ID: #${report.id})*\nReporter: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})\n\nResult: ${report.notes}`
+  
   if (supportGroup) {
     try {
-      const msg = `🚨 *New Leak Report (ID: #${report.id})*\nReporter: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})\n\nResult: ${report.notes}`
       if (extractedInfo.fileId) {
         await ctx.telegram.sendDocument(supportGroup, extractedInfo.fileId, { caption: msg, parse_mode: 'Markdown' })
       } else {
         await ctx.telegram.sendMessage(supportGroup, msg, { parse_mode: 'Markdown' })
       }
     } catch (e) {
-      logger.error('Failed to notify admin about leak report', { error: e.message })
+      logger.error('Failed to notify support group about leak report', { error: e.message })
     }
+  }
+
+  // Notify Admins
+  try {
+    const { notifyAdmins } = require('../services/notificationService')
+    await notifyAdmins(ctx.telegram, msg.replace(/Markdown/g, 'MarkdownV2'))
+  } catch (e) {
+    logger.error('Failed to notify admins about leak report', { error: e.message })
   }
 
   await clearWizardState(ctx, 'user')

@@ -18,6 +18,7 @@ const abandonedCartQueue = new Queue('abandoned-cart', { connection })
 const cleanupQueue = new Queue('cleanup', { connection })
 const deliveryQueue = new Queue('delivery', { connection })
 const subscriptionQueue = new Queue('subscriptions', { connection })
+const productLaunchQueue = new Queue('product-launch', { connection })
 
 // ─── Queue Setup ──────────────────────────────────────────────
 
@@ -92,6 +93,15 @@ async function startJobWorkers(bot) {
     { connection, concurrency: 1 }
   )
 
+  // Product launch worker
+  const productLaunchWorker = new Worker(
+    'product-launch',
+    async (job) => {
+      await checkScheduledLaunches(bot)
+    },
+    { connection, concurrency: 1 }
+  )
+
   logger.info('✅ Background job workers started')
 }
 
@@ -127,6 +137,16 @@ async function scheduleRecurringJobs() {
     {},
     {
       repeat: { cron: '0 8 * * *' },
+      removeOnComplete: true,
+    }
+  )
+
+  // Angalia bidhaa za ku-launch kila baada ya dakika 5
+  await productLaunchQueue.add(
+    'check-scheduled-launches',
+    {},
+    {
+      repeat: { every: 5 * 60 * 1000 },
       removeOnComplete: true,
     }
   )
@@ -206,6 +226,49 @@ async function checkSubscriptionExpiry(bot) {
     where: { isActive: true, expiresAt: { lt: new Date() } },
     data: { isActive: false },
   })
+}
+
+// ─── Scheduled Product Launch ─────────────────────────────────
+
+async function checkScheduledLaunches(bot) {
+  const { prisma } = require('../database')
+  const { notifyAdmins } = require('../services/notificationService')
+  
+  const now = new Date()
+
+  // Tafuta bidhaa ambazo ziko inactive na muda wake wa ku-publish umefika au umepita
+  const productsToLaunch = await prisma.product.findMany({
+    where: {
+      isActive: false,
+      publishAt: {
+        lte: now,
+      },
+    },
+    select: { id: true, name: true }
+  })
+
+  if (productsToLaunch.length === 0) return
+
+  for (const product of productsToLaunch) {
+    // Washa bidhaa
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { isActive: true, publishAt: null } // Tunatoa publishAt ili isirudie tena
+    })
+
+    // Mjulishe admin kuwa bidhaa imepanda hewani
+    try {
+      await notifyAdmins(
+        bot,
+        `🚀 *Bidhaa Imepanda Hewani Kiotomatiki!*\n\n` +
+        `📦 *${product.name}* (ID: ${product.id})\n` +
+        `Bidhaa hii sasa inaonekana kwa wateja.\n\n` +
+        `👉 Tumia Admin Panel ukitaka kutuma Broadcast kwa wateja.`
+      )
+    } catch (err) {
+      logger.error(`Failed to notify admin about product launch: ${product.id}`, { error: err.message })
+    }
+  }
 }
 
 module.exports = {

@@ -202,6 +202,7 @@ model Product {
   isFeatured         Boolean       @default(false) @map("is_featured")
   isPreOrder         Boolean       @default(false) @map("is_pre_order")
   isVipOnly          Boolean       @default(false) @map("is_vip_only")
+  publishAt          DateTime?     @map("publish_at")
 
   // Discount
   discountTzs        Int?          @map("discount_tzs")
