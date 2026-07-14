@@ -732,7 +732,7 @@ async function showProductConfirmation(ctx, wizard) {
     `🔜 Pre\\-Order: ${d.isPreOrder ? 'Ndiyo ✅' : 'Hapana ❌'}`,
     `📅 Schedule: ${d.publishAt ? escapeMarkdown(d.publishAt.toLocaleString('sw-TZ')) : 'Papo Hapo ⚡'}`,
     d.features ? `✅ Features: ${d.features.length}` : '',
-    d.lockedContent ? `🔒 Maudhui ya siri: ${escapeMarkdown(d.lockedContent.substring(0, 50))}\\.\\.\\.` : '',
+    d.lockedContent ? `🔒 Maudhui ya siri:\n${escapeMarkdown(d.lockedContent)}` : '',
     d.fileTelegramId ? `📁 Faili: ${escapeMarkdown(d.fileOriginalName || 'Imepakiwa')}` : '',
     (d.filePath && !d.fileTelegramId) ? `🔗 Kiungo: ${escapeMarkdown(d.filePath)}` : '',
     d.thumbnailFileId ? `🖼️ Picha: ✅` : `🖼️ Picha: ❌`,
