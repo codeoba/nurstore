@@ -247,6 +247,27 @@ function isDiscountActive(product) {
 }
 
 /**
+ * Pata jina la aina ya bidhaa kulingana na lugha
+ * @param {string} type 
+ * @param {string} lang 
+ * @returns {string}
+ */
+function formatProductType(type, lang = 'sw') {
+  if (lang === 'en') {
+    if (type === 'file') return 'File Download'
+    if (type === 'text_content') return 'Digital Text'
+    if (type === 'subscription') return 'Subscription'
+    if (type === 'bundle') return 'Bundle'
+    return type
+  }
+  if (type === 'file') return 'Faili la Kupakua'
+  if (type === 'text_content') return 'Maudhui ya Maandishi'
+  if (type === 'subscription') return 'Usajili (Subscription)'
+  if (type === 'bundle') return 'Kifurushi (Bundle)'
+  return type
+}
+
+/**
  * Escape maalum herufi za MarkdownV2 za Telegram
  * @param {string} text
  * @returns {string}
